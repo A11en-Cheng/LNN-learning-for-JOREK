@@ -1,100 +1,185 @@
-# 提案：基于 JOREK 模拟的液体神经网络 (LNN) 聚变破裂预测基准 (Benchmark)
+
+
+| 维度 | 旧提案 (V1): LNN Baseline | 新提案 (V2): Physics-Hard-Constrained HyPhy-LNN | 核心改进点 |
+| --- | --- | --- | --- |
+| **输入数据处理** | **纯数值压缩**：使用 PCA/Autoencoder 将高维场压缩为抽象的 Latent Vector。 | **对象中心 (Object-Centric)**：引入特征提取器 (类 YOLO/U-Net)，显式提取**物理对象**（磁岛宽度、X点位置）+ 隐式残差。 | **可解释性与泛化性**：网络不再是“看像素”，而是“看物理结构”，对新工况更鲁棒。 |
+| **物理约束** | **软约束 (Soft)**：依靠 Loss 函数 (MSE) 逼近，或无约束。可能出现 。 | **硬约束 (Hard)**：网络预测磁矢势  或磁通 ，通过数学定义的微分层计算 。 | **物理一致性**：在数学层面强制满足 ，消除非物理的“磁单极子”幻觉。 |
+| **动力学核心** | **LNN 单核**：LNN 负责学习所有 Latent 变量的演化。 | **混合动力学**：LNN 学习关键物理对象的演化（主导模态）+ 细节演化。 | **效率**：将算力集中在决定破裂的关键物理量上。 |
+| **输出与解码** | **直接重构**：解码器直接输出磁场 。 | **势函数重构**：输出 ，经由不可学习的微分层转化为物理场。 | **拓扑保证**：确保磁拓扑结构的连续性，便于后续热流追踪。 |
+| **OOD 应对** | 依赖数据覆盖率，遇到未见过的 SPI 策略可能失效。 | 依赖**特征解耦**：即使注入策略改变，只要物理特征（如磁岛）被识别，动力学规律依然适用。 | **鲁棒性**：将“感知”与“推理”解耦。 |
+
+---
+
+# 提案：基于混合物理特征与液体神经网络 (HyPhy-LNN) 的 JOREK 聚变破裂预测基准
 
 ## 1. 愿景与核心目的 (Vision & Objective)
 
-* **核心愿景**：构建下一代**符合物理直觉 (Physics-Aware)** 的等离子体演化预测模型，打破传统深度学习在连续物理系统中的“黑盒”与“离散”限制。
+* **核心愿景**：构建一个**物理一致 (Physics-Consistent)** 且**结构化 (Structured)** 的等离子体演化预测模型，解决传统深度学习模型不满足守恒律、难以解释以及在分布外 (OOD) 数据上泛化能力差的问题。
 * **直接目的**：
-* 建立一个标准化的 Benchmark，量化评估 LNN 在处理高维、非线性磁流体动力学 (MHD) 数据时的性能。
-* 验证 LNN 在**强扰动（SPI/MGI 注入）** 和 **混沌边界（破裂前夕）** 场景下的鲁棒性与泛化能力。
+1. 建立一个标准化的 Benchmark，验证“对象中心学习”结合“连续时间神经网络 (LNN)”在 MHD 模拟数据上的有效性。
+2. 通过**硬约束架构**，从数学层面根除磁场散度不为零 () 的非物理伪影。
 
 
-* **长远目标**：实现从“离线模拟加速”到“实时等离子体控制”的跨越，为未来的托卡马克（如 ITER/CFETR）提供毫秒级的预测与决策支持。
+* **长远目标**：实现对托卡马克破裂前夕磁拓扑结构的毫秒级精准推演，进而实现基于物理场的实时热流沉积预测与控制。
 
-## 2. 核心技术：LNN 的物理特性与优势 (Why LNN?)
+## 2. 核心技术架构 (Technical Architecture)
 
-LNN 不仅仅是一个神经网络，它本质上是一个**可微分的动力系统**。
+本提案采用 **“感知-认知-重构” (Perception-Cognition-Reconstruction)** 的三段式架构，将物理先验知识深度嵌入神经网络设计中。
 
-* **连续时间处理 (Continuous-Time Processing)**：
-* **特性**：LNN 基于常微分方程 (ODEs)  构建，而非离散的层级映射。
-* **优势**：能够天然处理 JOREK 的非均匀时间步长，无需重采样；可以以任意时间分辨率进行“时间旅行”（推演未来任意时刻）。
+### 模块 A：感知层 - 物理对象特征提取 (Perception: Object-Centric Extraction)
+
+* **痛点解决**：传统 CNN/Autoencoder 提取的潜变量缺乏明确物理意义，导致模型难以应对未见过的扰动（OOD 问题）。
+* **具体实现**：引入 **Physics-Informed U-Net** 或 **Attention Mechanism**。
+* **显式特征 (Explicit Physics)**：利用语义分割思想，识别并提取关键相干结构参数：
+* **磁岛 (Magnetic Islands)**：提取宽度 、相位 、位置 。
+* **随机化区域 (Ergodic Layer)**：提取随机化边界半径。
 
 
-* **因果适应性 (Causal Adaptivity)**：
-* **特性**：其时间常数  随输入信号动态变化。
-* **优势**：模型能根据等离子体状态（平稳期 vs. 猝灭期）自动调整“反应速度”，精准捕捉突变信号（如热猝灭瞬间）。
-
-
-* **相空间重构 (Phase Space Reconstruction)**：
-* **特性**：LNN 的潜在空间 (Latent Space) 表现为稳定的吸引子 (Attractor) 结构。
-* **优势**：在数学层面与 MHD 的湍流吸引子同构，保证了预测结果在物理拓扑上的一致性，而非仅仅是数值拟合。
+* **隐式特征 (Implicit Residuals)**：利用卷积层编码背景流场的细微变化，作为显式特征的补充。
 
 
 
-## 3. 契合度分析：为何选择 LNN + JOREK？ (The Strategic Fit)
+### 模块 B：认知层 - 连续时间动力学 (Cognition: Continuous Dynamics)
 
-* **数据特性的完美映射**：
-* **JOREK**：求解的是连续流体方程，产生的是高维流场演化。
-* **LNN**：本身即为微分方程求解器。用 LNN 拟合 JOREK，是用“小方程（神经网络）”去逼近“大方程（MHD）”，比用统计模型（Transformer）去猜概率更符合第一性原理。
-
-
-* **解决稀疏与高维矛盾**：
-* JOREK 数据虽为高维稀疏矩阵，但其核心动力学由少数几个 MHD 模态主导。LNN（特别是 NCP 架构）擅长稀疏连接，能高效提取这些低维动力学骨架。
+* **痛点解决**：JOREK 的自适应时间步长 ( 变化范围可达  倍) 导致传统 RNN/LSTM 需重采样，丢失高频信息。
+* **具体实现**：采用 **Liquid Neural Networks (Specifically CfC - Closed-form Continuous models)**。
+* LNN 将感知层输出的特征向量  视为输入，学习其对应的常微分方程 (ODE)：
 
 
-* **应对“数据分布外 (OOD)”挑战**：
-* **痛点**：现有的 CNN/RNN 在遇到未见过的 SPI 注入策略时往往失效。
-* **LNN 方案**：由于学习的是因果微分关系，LNN 在面对新的注入参数（如不同的注入量/位置）时，更有可能推导出正确的物理响应，而非产生幻觉。
+* **优势**：在连续时间域上求解，能够自适应地处理破裂前夕的指数级增长 (Thermal Quench)，并准确捕捉因果关系。
 
 
 
-## 4. 实施路线图 (Execution Plan)
+### 模块 C：重构层 - 物理硬约束解码 (Reconstruction: Hard Constraints)
 
-### 第一阶段：数据工程与降维 (Data Pipeline)
-
-* **数据源**：JOREK 模拟数据库（涵盖平稳放电、密度极限破裂、SPI/MGI 减缓案例）。
-* **关键变量**：
-* 流体场： (磁通),  (电流),  (温度),  (密度),  (涡度)。
-* 控制量：SPI/MGI 注入率、位置、速度。
-
-
-* **预处理**：
-* 空间对齐：将有限元网格插值/光栅化为统一截面。
-* 特征压缩：训练 **CNN-Autoencoder** 或 **POD (PCA)**，将高维场压缩为低维潜变量 (Latent Vector, e.g., 64-dim)。
+* **痛点解决**：直接预测磁场  往往导致 ，破坏磁力线拓扑，使得后续的热流分析失效。
+* **具体实现**：**势函数预测 + 自动微分**。
+* 模型**不直接输出**磁场或速度场。
+* 模型输出 **磁通函数 (Poloidal Flux, )** 和 **流函数 (Stream Function, )**。
+* 通过一个**不可学习的微分层 (Fixed Differentiable Layer)** 计算物理量：
 
 
 
-### 第二阶段：模型构建与训练 (Modeling)
-
-* **核心架构**：**Latent-LNN (CfC variant)**。
-* 输入： 时刻的潜变量 + 控制参数。
-* 核心：CfC (Closed-form Continuous) 单元学习潜变量的时间演化 ODE。
-* 输出： 时刻的潜变量  解码回物理场。
-
-
-* **基准模型 (Baselines)**：
-* LSTM / GRU (传统时序)。
-* Transformer / GPT-style (现代注意力机制)。
-* FNO (Fourier Neural Operator, 物理算子基准)。
+* **结果**：输出场在机器精度下天然满足  和  (在特定近似下)。
 
 
 
-### 第三阶段：评估与可视化 (Evaluation)
+## 3. 实施途径与技术路线 (Implementation Pathway)
 
-* **任务 A：短期演化**：对比  的全场重建误差 (MSE, SSIM)。
-* **任务 B：破裂预警**：预测热猝灭 (TQ) 发生的时刻 (Time-to-Event)。
-* **可视化验证**：
-* **物理一致性**：展示磁岛结构、随机化区域的保留情况。
-* **动力学验证**：绘制 3D 相空间轨迹，对比 LNN 吸引子与 JOREK 真实吸引子的重合度。
+### 阶段一：数据管线构建 (Data Pipeline)
 
-
-
-## 5. 预期成果与补充价值 (Impact & Value Add)
-
-* **科学价值**：证明 LNN 是替代 RNN/Transformer 处理科学计算数据的更优解。
-* **工程价值**：提供一个比 JOREK 快 1000 倍以上的“数字孪生”代理模型，使实时模拟辅助控制成为可能。
-* **可解释性 (补充点)**：
-* 不同于 Transformer 的 Attention Map，我们将尝试分析 LNN 的**稀疏权重连接**，解读网络学到了哪些具体的物理耦合（例如：注入量如何具体影响磁岛生长率）。
+1. **JOREK 数据源**：生成涵盖平稳放电、密度极限破裂、不同 SPI 注入量/位置的模拟数据集。
+2. **降维预处理**：
+* 将 JOREK 的有限元数据插值到高分辨率极坐标网格 。
+* 标注/提取关键物理特征（如利用庞加莱图辅助标记磁岛位置），用于训练感知层的特征提取器。
 
 
-* **标准化贡献**：该 Benchmark 将开源数据处理脚本和评估标准，填补聚变领域“AI 模型缺乏统一测试场”的空白。
 
+### 阶段二：模型构建与训练 (Modeling)
+
+1. **编码器训练**：
+* 使用 **U-Net** 结构，训练目标是既能重构输入场，又能准确分割出磁岛区域（Multi-task Learning）。
+
+
+2. **动力学训练**：
+* 冻结编码器，将提取的时间序列特征输入 **CfC-LNN**。
+* Loss 函数设计：包含状态预测误差 (MSE) + 物理守恒误差（如能量守恒惩罚）。
+
+
+3. **端到端微调 (End-to-End Fine-tuning)**：
+* 连接所有模块，加入微分层，进行整体梯度下降。
+
+
+
+### 阶段三：基准测试与评估 (Evaluation Benchmark)
+
+为了验证可靠性，我们设立三个递进的测试任务：
+
+* **Task 1: 拓扑一致性测试 (Topological Consistency)**
+* **指标**： 的残差值（应接近 0）；X-point 和 O-point 位置的预测精度。
+* **目的**：验证硬约束架构的有效性。
+
+
+* **Task 2: 动力学分岔预测 (Bifurcation Prediction)**
+* **指标**：Time-to-TQ (热猝灭发生时间) 的误差；磁岛生长率  的拟合度。
+* **目的**：验证 LNN 对混沌边界指数增长的捕捉能力。
+
+
+* **Task 3: 泛化能力测试 (OOD Generalization)**
+* **场景**：输入训练集中未包含的 SPI 注入位置或混合注入策略。
+* **指标**：模型是否能基于物理特征推演出合理的演化路径，而非产生非物理的伪影。
+
+
+
+## 4. 预期成果与延伸价值 (Impact)
+
+* **科学价值**：首个将 **对象中心学习 (Object-Centric)** 与 **LNN** 结合应用于 MHD 破裂预测的研究，为 AI for Science 提供一种“白盒化”的新范式。
+* **工程价值**：
+* 提供满足  的高质量替代模型，可直接用于后续的**热流沉积 (Heat Flux)** 计算（Field Line Tracing）。
+* 计算速度相比 JOREK 提升 3-4 个数量级，使实时放电模拟成为可能。
+
+
+
+---
+
+## 5. 附录：具体实现的技术细节 (Implementation Details)
+
+为了回应你关于“实现途径”的询问，以下是核心代码逻辑的伪代码描述：
+
+```python
+import torch
+import torch.nn as nn
+from ncps.torch import CfC  # Neural Circuit Policies for LNN
+
+class HyPhyLNN(nn.Module):
+    def __init__(self, input_shape, n_latent):
+        super().__init__()
+        # 1. 感知层 (The Eye): Physics-Aware Encoder
+        # 输入: JOREK Snapshot (Density, Temperature, Flux)
+        # 任务: 提取显式特征(磁岛宽度等) + 隐式Latent
+        self.perception = PhysicsInformedEncoder(input_shape, n_latent)
+        
+        # 2. 动力学层 (The Brain): LNN ODE Solver
+        # 任务: 预测下一时刻的特征状态
+        self.dynamics = CfC(input_size=n_latent, hidden_size=128, proj_size=n_latent)
+        
+        # 3. 解码层 (The Body): Potential Function Decoder
+        # 任务: 将Latent解码为 Poloidal Flux (psi)
+        self.decoder = SpatialDecoder(n_latent, output_shape=(H, W))
+
+    def physics_hard_constraint(self, psi):
+        """
+        物理硬约束层 (不可学习)
+        通过离散微分算子，由 psi 计算 B
+        """
+        # 使用 PyTorch 的 gradient 或 卷积核计算梯度
+        dpsi_dR = torch.gradient(psi, dim=1) 
+        dpsi_dZ = torch.gradient(psi, dim=2)
+        
+        # B_R = -(1/R) * dpsi_dZ
+        # B_Z = +(1/R) * dpsi_dR
+        # 这样计算出的 B 场天然满足 div(B) = 0
+        B_field = compute_B_from_psi(dpsi_dR, dpsi_dZ)
+        return B_field
+
+    def forward(self, x_series, time_spans):
+        # x_series: [Batch, Time, Channels, Height, Width]
+        
+        # Step A: 逐帧感知特征
+        batch, time, c, h, w = x_series.shape
+        x_flat = x_series.view(batch * time, c, h, w)
+        features = self.perception(x_flat) # -> [Batch, Time, Latent]
+        
+        # Step B: LNN 动力学演化
+        # prediction_latent 是预测的未来特征
+        prediction_latent, _ = self.dynamics(features, times=time_spans)
+        
+        # Step C: 解码为势函数
+        psi_pred = self.decoder(prediction_latent)
+        
+        # Step D: 物理约束计算物理场
+        B_pred = self.physics_hard_constraint(psi_pred)
+        
+        return B_pred, psi_pred
+
+```
