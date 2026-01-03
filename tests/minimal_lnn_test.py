@@ -1,3 +1,4 @@
+from matplotlib.colors import LogNorm
 import torch
 import torch.nn as nn
 import numpy as np
@@ -12,16 +13,16 @@ def minimal_lnn_run():
     # 1. 制造“非均匀时间”数据 (Irregular Time Sampling)
     # LNN 的强项在于处理 dt 变化的数据
     # -----------------------------------------
-    batch_size = 10
+    batch_size = 1
     seq_len = 1000
     input_size = 1
-    hidden_size = 32
+    hidden_size = 16
     
     # 生成时间轴：随机的时间步长 dt
     # 模拟 JOREK 的自适应步长
     dt = torch.rand(batch_size, seq_len) * 0.1 + 0.01  # dt in [0.01, 0.11]
     times = torch.cumsum(dt, dim=1) # 绝对时间 t
-    
+    print('total time:', times[0,-1].item(), '\n dt = ', dt[0,:10])
     # 目标函数：y = sin(t)
     # 输入特征：x = sin(t) + noise (稍微加点噪声)
     target = torch.sin(times).unsqueeze(-1) # [Batch, Seq, 1]
@@ -61,13 +62,13 @@ def minimal_lnn_run():
     # -----------------------------------------
     # 3. 简单的训练循环 (验证反向传播)
     # -----------------------------------------
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
     criterion = nn.MSELoss()
 
-    print("Starting training loop (50 epochs)...")
+    print("Starting training loop (2000 epochs)...")
     losses = []
     
-    for epoch in range(500):
+    for epoch in range(1450):
         optimizer.zero_grad()
         
         # Forward pass
@@ -81,9 +82,23 @@ def minimal_lnn_run():
         
         losses.append(loss.item())
         if (epoch+1) % 10 == 0:
-            print(f"Epoch {epoch+1}/50 | Loss: {loss.item():.6f}")
+            print(f"Epoch {epoch+1}/3000 | Loss: {loss.item():.6f}")
+            
+        
 
     print("Training finished.")
+    epoches = np.arange(1, len(losses)+1)
+    plt.figure(figsize=(6,4),dpi=300)
+    plt.plot(epoches, losses, label="Training Loss")
+    plt.yscale('log')
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training Loss over Epochs")
+    plt.legend()
+    plt.grid(True)
+    plt.savefig("lnn_training_loss.png")
+    print("Training loss plot saved to 'lnn_training_loss.png'")
+    plt.close()
 
     # -----------------------------------------
     # 4. 可视化结果
@@ -94,7 +109,7 @@ def minimal_lnn_run():
         time_np = times.cpu().numpy()[0, :]
 
     try:
-        plt.figure(figsize=(10, 4))
+        plt.figure(figsize=(10, 4),dpi=300)
         plt.plot(time_np, target_np, label="Ground Truth (Physics)", linestyle="--", color="black")
         plt.plot(time_np, pred_np, label="LNN Prediction", color="red", alpha=0.8)
         plt.scatter(time_np, input_data.cpu().numpy()[0, :, 0], s=10, alpha=0.3, label="Noisy Input")
