@@ -209,3 +209,6 @@ __marimo__/
 #data for trainning
 data/
 data/*
+*.png
+*.jpg
+*.jpeg
