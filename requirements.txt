@@ -1,0 +1,22 @@
+# Core DL Framework
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+
+# Liquid Neural Networks (关键库)
+ncps>=0.0.7
+
+# Scientific Computing & Data
+numpy>=1.24.0
+scipy>=1.10.0
+h5py>=3.8.0         # 读取 JOREK 数据必备
+pandas>=2.0.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+tqdm>=4.65.0        # 进度条
+hydra-core>=1.3.0   # (可选) 推荐用于管理复杂的实验配置
+tensorboard>=2.12.0 # 训练监控

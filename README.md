@@ -183,3 +183,43 @@ class HyPhyLNN(nn.Module):
         return B_pred, psi_pred
 
 ```
+
+
+# 项目架构
+```text
+HyPhy-LNN/
+├── data/                   # 数据存放 (不要上传大文件到 git)
+│   ├── raw/                # 原始 JOREK 输出文件 (.h5, .dat)
+│   └── processed/          # 预处理后的 PyTorch Tensor (.pt)
+├── src/                    # 核心源代码
+│   ├── __init__.py
+│   ├── models/             # 模型定义
+│   │   ├── __init__.py
+│   │   ├── encoder.py      # 模块A: 感知层 (U-Net / CNN)
+│   │   ├── lnn_core.py     # 模块B: 动力学层 (CfC/LNN 封装)
+│   │   └── decoder.py      # 模块C: 物理硬约束与解码 (Psi -> B)
+│   ├── physics/            # 物理规则与 JOREK 接口
+│   │   ├── __init__.py
+│   │   ├── jorek_loader.py # 解析 JOREK 数据
+│   │   └── mhd_utils.py    # 磁面坐标变换、物理常数、微分算子
+│   └── utils/              # 工具函数
+│       ├── __init__.py
+│       ├── visualization.py# 画磁拓扑图、庞加莱图
+│       └── metrics.py      # 自定义评估指标 (e.g., div(B) check)
+├── experiments/            # 实验脚本
+│   ├── train_topology.py   # Level 1 训练脚本
+│   └── train_heatflux.py   # Level 2 训练脚本
+├── notebooks/              # Jupyter Notebooks (用于探索性分析)
+│   └── 01_data_preview.ipynb
+├── tests/                  # 单元测试 (保证各模块独立工作正常)
+├── requirements.txt        # 依赖清单
+├── verify_env.py           # 环境验证脚本
+├── minimal_lnn_test.py     # LNN 最小算例
+└── README.md               # 项目说明
+```
+
+
+Note that pytorch should be installed via official instructions from https://pytorch.org/get-started/locally/ to ensure CUDA compatibility.
+
+After pytorch is installed, run `pip install -r requirements.txt` to install other dependencies, then Run `python verify_env.py` to check your environment setup.
+
