@@ -212,3 +212,7 @@ data/*
 *.png
 *.jpg
 *.jpeg
+
+#redundant 
+redundant/*
+redundant/

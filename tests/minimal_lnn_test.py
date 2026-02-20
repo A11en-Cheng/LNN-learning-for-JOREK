@@ -25,7 +25,7 @@ def minimal_lnn_run():
     print('total time:', times[0,-1].item(), '\n dt = ', dt[0,:10])
     # 目标函数：y = sin(t)
     # 输入特征：x = sin(t) + noise (稍微加点噪声)
-    target = torch.sin(times).unsqueeze(-1) # [Batch, Seq, 1]
+    target = 0.5* torch.sin(times).unsqueeze(-1) + 0.5*torch.cos(2*times).unsqueeze(-1) # [Batch, Seq, 1]
     input_data = target + 0.05 * torch.randn_like(target)
 
     print(f"Data shape: {input_data.shape}")
@@ -68,7 +68,7 @@ def minimal_lnn_run():
     print("Starting training loop (2000 epochs)...")
     losses = []
     
-    for epoch in range(1450):
+    for epoch in range(3000):
         optimizer.zero_grad()
         
         # Forward pass

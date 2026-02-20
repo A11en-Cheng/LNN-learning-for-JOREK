@@ -1,225 +1,128 @@
+# 提案：基于混合物理图与液体神经网络 (HyPhy-GLNN) 的 JOREK 聚变破裂预测基准
 
-
-| 维度 | 旧提案 (V1): LNN Baseline | 新提案 (V2): Physics-Hard-Constrained HyPhy-LNN | 核心改进点 |
+| 维度 | 旧提案 (V2): CNN+LNN (图像插值) | 新提案 (V3): HyPhy-GLNN (GNN原生网格) | 核心改进点 |
 | --- | --- | --- | --- |
-| **输入数据处理** | **纯数值压缩**：使用 PCA/Autoencoder 将高维场压缩为抽象的 Latent Vector。 | **对象中心 (Object-Centric)**：引入特征提取器 (类 YOLO/U-Net)，显式提取**物理对象**（磁岛宽度、X点位置）+ 隐式残差。 | **可解释性与泛化性**：网络不再是“看像素”，而是“看物理结构”，对新工况更鲁棒。 |
-| **物理约束** | **软约束 (Soft)**：依靠 Loss 函数 (MSE) 逼近，或无约束。可能出现 。 | **硬约束 (Hard)**：网络预测磁矢势  或磁通 ，通过数学定义的微分层计算 。 | **物理一致性**：在数学层面强制满足 ，消除非物理的“磁单极子”幻觉。 |
-| **动力学核心** | **LNN 单核**：LNN 负责学习所有 Latent 变量的演化。 | **混合动力学**：LNN 学习关键物理对象的演化（主导模态）+ 细节演化。 | **效率**：将算力集中在决定破裂的关键物理量上。 |
-| **输出与解码** | **直接重构**：解码器直接输出磁场 。 | **势函数重构**：输出 ，经由不可学习的微分层转化为物理场。 | **拓扑保证**：确保磁拓扑结构的连续性，便于后续热流追踪。 |
-| **OOD 应对** | 依赖数据覆盖率，遇到未见过的 SPI 策略可能失效。 | 依赖**特征解耦**：即使注入策略改变，只要物理特征（如磁岛）被识别，动力学规律依然适用。 | **鲁棒性**：将“感知”与“推理”解耦。 |
+| **输入数据处理** | **强制栅格化**：将非结构化网格插值到 $64\times64$ 笛卡尔网格，丢失高阶曲率与梯度信息。 | **图原生学习 (Graph-Native)**：直接读取 JOREK 节点 (`t_values`) 与拓扑连接 (`t_contain_node`) 构建图。 | **物理保真度**：完美保留等离子体边界、X 点结构及通量面 (Flux-aligned) 几何特征。 |
+| **空间特征提取** | **二维卷积 (CNN)**：依赖平移不变性，无法处理复杂的边界和极点。 | **图神经网络 (GNN)**：通过消息传递机制 (Message Passing) 在相邻节点间传播物理量。 | **几何自适应**：天然适应球形托卡马克 (ST) 等复杂或多连通域拓扑。 |
+| **网格与装置迁移** | **分辨率锁死**：模型绑定于固定的输入尺寸，遇到自适应加密 (AMR) 或新装置即失效。 | **分辨率无关 (Resolution Independent)**：学习节点间的交互法则，支持 Zero-shot 网格迁移。 | **泛化性极强**：在低分辨率训练的模型可直接用于高分辨率推理，且支持跨装置迁移。 |
+| **动力学核心** | **LNN 预测全局 Latent**：处理插值图像压缩后的隐变量演化。 | **LNN 预测图节点 Latent**：结合 GNN，推演每个节点特征的连续时间 ODE。 | **精准度**：能够追踪局部区域（如磁岛核心）在非均匀时间步长下的指数级突变。 |
+| **物理约束解码** | **有限差分**：在规整网格上进行简单的图像差分求磁场 $\mathbf{B}$。 | **离散图微分算子**：在原生图上应用硬约束（预测 $\psi$，图上求旋度）与软约束（能量/质量守恒）。 | **严格物理一致**：满足 $\nabla \cdot \mathbf{B}=0$，并保证长时程动力学不发散。 |
 
 ---
-
-# 提案：基于混合物理特征与液体神经网络 (HyPhy-LNN) 的 JOREK 聚变破裂预测基准
 
 ## 1. 愿景与核心目的 (Vision & Objective)
 
-* **核心愿景**：构建一个**物理一致 (Physics-Consistent)** 且**结构化 (Structured)** 的等离子体演化预测模型，解决传统深度学习模型不满足守恒律、难以解释以及在分布外 (OOD) 数据上泛化能力差的问题。
+* **核心愿景**：构建一个**几何自适应 (Geometry-Adaptive)**、**物理守恒 (Physics-Conserving)** 且 **时间连续 (Continuous-Time)** 的托卡马克等离子体演化预测模型，彻底打破深度学习在处理非结构化科学数据时的插值损耗。
 * **直接目的**：
-1. 建立一个标准化的 Benchmark，验证“对象中心学习”结合“连续时间神经网络 (LNN)”在 MHD 模拟数据上的有效性。
-2. 通过**硬约束架构**，从数学层面根除磁场散度不为零 () 的非物理伪影。
-
-
-* **长远目标**：实现对托卡马克破裂前夕磁拓扑结构的毫秒级精准推演，进而实现基于物理场的实时热流沉积预测与控制。
+  1. 建立基于 JOREK 原生有限元数据的标准化 Benchmark，验证 GNN+LNN 架构处理复杂磁流体动力学 (MHD) 的有效性。
+  2. 实现跨网格分辨率的迁移学习，证明模型学习到了物理法则而非特定网格的数值拟合。
+* **长远目标**：实现一套“即插即用”的破裂预测与数字孪生代理模型，能够在不同托卡马克装置（如 EXL-50U, HL-2M, ITER）间实现高精度知识迁移。
 
 ## 2. 核心技术架构 (Technical Architecture)
 
-本提案采用 **“感知-认知-重构” (Perception-Cognition-Reconstruction)** 的三段式架构，将物理先验知识深度嵌入神经网络设计中。
+本提案采用 **GNN-LNN-GNN (感知-认知-重构)** 三段式混合物理架构。
 
-### 模块 A：感知层 - 物理对象特征提取 (Perception: Object-Centric Extraction)
-
-* **痛点解决**：传统 CNN/Autoencoder 提取的潜变量缺乏明确物理意义，导致模型难以应对未见过的扰动（OOD 问题）。
-* **具体实现**：引入 **Physics-Informed U-Net** 或 **Attention Mechanism**。
-* **显式特征 (Explicit Physics)**：利用语义分割思想，识别并提取关键相干结构参数：
-* **磁岛 (Magnetic Islands)**：提取宽度 、相位 、位置 。
-* **随机化区域 (Ergodic Layer)**：提取随机化边界半径。
-
-
-* **隐式特征 (Implicit Residuals)**：利用卷积层编码背景流场的细微变化，作为显式特征的补充。
-
-
+### 模块 A：感知层 - 图拓扑特征提取 (Perception: Graph Encoder)
+* **技术路线**：废弃 CNN，使用 **Graph Neural Networks (GCN/GAT)**。
+* **输入构建**：
+  * **节点特征 ($V$)**：直接读取 HDF5 中的物理坐标 $(R, Z)$ 与状态变量 $(\rho, T, \psi, \dots)$。
+  * **边特征 ($E$)**：解析 JOREK 单元连接矩阵 (`contain_node` 或 `neighbours`)，构建物理连通图。区分极向 (Poloidal) 与径向 (Radial) 边缘以体现等离子体输运的各向异性。
+* **作用**：提取 X 点、磁岛结构等局部几何特征，将节点维度压缩为 Latent Representation。
 
 ### 模块 B：认知层 - 连续时间动力学 (Cognition: Continuous Dynamics)
+* **技术路线**：采用 **Liquid Neural Networks (CfC - Closed-form Continuous models)**。
+* **输入与输出**：接收 GNN 提取的图结构 Latent 向量，以及真实的物理时间步长 $\Delta t$。
+* **优势**：完美契合 JOREK 的自适应时间步长（$dt$ 在破裂前夕会急剧变小），在连续时间域求解微分方程，无需重采样序列。
 
-* **痛点解决**：JOREK 的自适应时间步长 ( 变化范围可达  倍) 导致传统 RNN/LSTM 需重采样，丢失高频信息。
-* **具体实现**：采用 **Liquid Neural Networks (Specifically CfC - Closed-form Continuous models)**。
-* LNN 将感知层输出的特征向量  视为输入，学习其对应的常微分方程 (ODE)：
-
-
-* **优势**：在连续时间域上求解，能够自适应地处理破裂前夕的指数级增长 (Thermal Quench)，并准确捕捉因果关系。
-
-
-
-### 模块 C：重构层 - 物理硬约束解码 (Reconstruction: Hard Constraints)
-
-* **痛点解决**：直接预测磁场  往往导致 ，破坏磁力线拓扑，使得后续的热流分析失效。
-* **具体实现**：**势函数预测 + 自动微分**。
-* 模型**不直接输出**磁场或速度场。
-* 模型输出 **磁通函数 (Poloidal Flux, )** 和 **流函数 (Stream Function, )**。
-* 通过一个**不可学习的微分层 (Fixed Differentiable Layer)** 计算物理量：
-
-
-
-* **结果**：输出场在机器精度下天然满足  和  (在特定近似下)。
-
-
+### 模块 C：重构层 - 物理硬/软约束解码 (Reconstruction: Physics Decoder)
+* **硬约束 (Hard Constraints)**：
+  * **磁场无散**：模型输出节点上的磁通 $\psi$，通过图结构上的离散微分算子计算 $\mathbf{B} = \nabla \times (\psi \hat{\phi})$，强制 $\nabla \cdot \mathbf{B} \equiv 0$。
+  * **正定性**：在输出密度 $\rho$ 和温度 $T$ 的最后一层应用 `Softplus` 激活函数，根除负值导致的非物理崩溃。
+* **软约束 (Soft Constraints/Loss)**：在损失函数中引入整体能量守恒惩罚 ($Loss_{energy}$) 与质量连续性惩罚 ($Loss_{mass}$)。
 
 ## 3. 实施途径与技术路线 (Implementation Pathway)
 
-### 阶段一：数据管线构建 (Data Pipeline)
+### 阶段一：短期目标 —— 数据图管线与可行性验证 (Month 1-2)
+1. **数据解析器**：编写 Python 脚本 (`jorek_parser.py`)，利用 `h5py` 直接读取 JOREK 重启文件中的 `t_values`、`t_x` 和 `t_contain_node`。
+2. **图构建与加载**：基于 PyTorch Geometric (PyG) 将非结构化数据封装为 `Data` 对象，建立包含时序的 `GraphDataset`。
+3. **基准跑通**：构建初步的 `GCN -> CfC-LNN -> GCN` 骨架，验证数据流张量维度匹配，完成初步收敛。
 
-1. **JOREK 数据源**：生成涵盖平稳放电、密度极限破裂、不同 SPI 注入量/位置的模拟数据集。
-2. **降维预处理**：
-* 将 JOREK 的有限元数据插值到高分辨率极坐标网格 。
-* 标注/提取关键物理特征（如利用庞加莱图辅助标记磁岛位置），用于训练感知层的特征提取器。
+### 阶段二：中期目标 —— 动力学引入与物理约束 (Month 3-5)
+1. **定制图微积分**：开发在非结构化网格上的梯度计算层 (`grad_ops.py`)，实现磁场 $\mathbf{B}$ 和速度场 $\mathbf{v}$ (经流函数 $\Phi$) 的推导。
+2. **物理正则化训练**：引入自定义物理 Loss 函数（状态重构误差 + 全局能量守恒误差），观察并解决多目标优化可能带来的梯度冲突（Gradient Pathology）。
+3. **演化验证**：在热猝灭 (Thermal Quench) 序列上测试，对比 LNN 预测的动力学轨迹与 JOREK 真实轨迹，验证时间连续性优势。
 
-
-
-### 阶段二：模型构建与训练 (Modeling)
-
-1. **编码器训练**：
-* 使用 **U-Net** 结构，训练目标是既能重构输入场，又能准确分割出磁岛区域（Multi-task Learning）。
-
-
-2. **动力学训练**：
-* 冻结编码器，将提取的时间序列特征输入 **CfC-LNN**。
-* Loss 函数设计：包含状态预测误差 (MSE) + 物理守恒误差（如能量守恒惩罚）。
-
-
-3. **端到端微调 (End-to-End Fine-tuning)**：
-* 连接所有模块，加入微分层，进行整体梯度下降。
-
-
-
-### 阶段三：基准测试与评估 (Evaluation Benchmark)
-
-为了验证可靠性，我们设立三个递进的测试任务：
-
-* **Task 1: 拓扑一致性测试 (Topological Consistency)**
-* **指标**： 的残差值（应接近 0）；X-point 和 O-point 位置的预测精度。
-* **目的**：验证硬约束架构的有效性。
-
-
-* **Task 2: 动力学分岔预测 (Bifurcation Prediction)**
-* **指标**：Time-to-TQ (热猝灭发生时间) 的误差；磁岛生长率  的拟合度。
-* **目的**：验证 LNN 对混沌边界指数增长的捕捉能力。
-
-
-* **Task 3: 泛化能力测试 (OOD Generalization)**
-* **场景**：输入训练集中未包含的 SPI 注入位置或混合注入策略。
-* **指标**：模型是否能基于物理特征推演出合理的演化路径，而非产生非物理的伪影。
-
-
-
-## 4. 预期成果与延伸价值 (Impact)
-
-* **科学价值**：首个将 **对象中心学习 (Object-Centric)** 与 **LNN** 结合应用于 MHD 破裂预测的研究，为 AI for Science 提供一种“白盒化”的新范式。
-* **工程价值**：
-* 提供满足  的高质量替代模型，可直接用于后续的**热流沉积 (Heat Flux)** 计算（Field Line Tracing）。
-* 计算速度相比 JOREK 提升 3-4 个数量级，使实时放电模拟成为可能。
-
-
+### 阶段三：长期目标 —— 装置迁移与长程控制 (Month 6+)
+1. **跨网格泛化测试 (Zero-shot)**：在 JOREK 粗网格 (e.g., 5k nodes) 上完成训练，直接输入细网格 (e.g., 20k nodes) 数据进行推理验证。
+2. **多装置测试**：评估模型从特定装置（如球形托卡马克 EXL-50U）向其他磁位形迁移的适应性。
+3. **闭环代理模型**：将模型封装为极速 (毫秒级) 数字孪生接口，评估其辅助实时放电控制的潜力。
 
 ---
 
-## 5. 附录：具体实现的技术细节 (Implementation Details)
-
-为了回应你关于“实现途径”的询问，以下是核心代码逻辑的伪代码描述：
+## 4. 附录：核心伪代码架构 (Implementation Details)
 
 ```python
 import torch
 import torch.nn as nn
-from ncps.torch import CfC  # Neural Circuit Policies for LNN
+from torch_geometric.nn import GCNConv
+from ncps.torch import CfC
 
-class HyPhyLNN(nn.Module):
-    def __init__(self, input_shape, n_latent):
+class HyPhyGLNN(nn.Module):
+    def __init__(self, in_node_features, latent_dim):
         super().__init__()
-        # 1. 感知层 (The Eye): Physics-Aware Encoder
-        # 输入: JOREK Snapshot (Density, Temperature, Flux)
-        # 任务: 提取显式特征(磁岛宽度等) + 隐式Latent
-        self.perception = PhysicsInformedEncoder(input_shape, n_latent)
+        # 1. 感知层 (The Eye): GNN Encoder
+        # 输入: 原生网格节点特征 (R, Z, rho, T, psi)
+        # 作用: 沿着 edge_index 传播物理信息
+        self.gnn_encoder = nn.ModuleList([
+            GCNConv(in_node_features, 64),
+            GCNConv(64, latent_dim)
+        ])
         
         # 2. 动力学层 (The Brain): LNN ODE Solver
-        # 任务: 预测下一时刻的特征状态
-        self.dynamics = CfC(input_size=n_latent, hidden_size=128, proj_size=n_latent)
+        # 作用: 预测每个节点(或全图)特征在任意 dt 下的演化
+        self.dynamics = CfC(input_size=latent_dim, hidden_size=128, proj_size=latent_dim)
         
-        # 3. 解码层 (The Body): Potential Function Decoder
-        # 任务: 将Latent解码为 Poloidal Flux (psi)
-        self.decoder = SpatialDecoder(n_latent, output_shape=(H, W))
+        # 3. 解码层 (The Body): GNN Decoder
+        self.gnn_decoder = nn.ModuleList([
+            GCNConv(latent_dim, 64),
+            GCNConv(64, 3)  # 输出: d_psi, d_rho, d_T
+        ])
+        
+        self.softplus = nn.Softplus() # 物理正定性约束
 
-    def physics_hard_constraint(self, psi):
+    def physics_hard_constraint(self, psi_nodes, edge_index, coords):
         """
-        物理硬约束层 (不可学习)
-        通过离散微分算子，由 psi 计算 B
+        在图上计算离散微分: B = curl(psi)
         """
-        # 使用 PyTorch 的 gradient 或 卷积核计算梯度
-        dpsi_dR = torch.gradient(psi, dim=1) 
-        dpsi_dZ = torch.gradient(psi, dim=2)
-        
-        # B_R = -(1/R) * dpsi_dZ
-        # B_Z = +(1/R) * dpsi_dR
-        # 这样计算出的 B 场天然满足 div(B) = 0
-        B_field = compute_B_from_psi(dpsi_dR, dpsi_dZ)
+        # 利用 PyG 的聚合函数和节点坐标计算差分，返回满足 div(B)=0 的磁场
+        B_field = compute_curl_on_graph(psi_nodes, edge_index, coords)
         return B_field
 
-    def forward(self, x_series, time_spans):
-        # x_series: [Batch, Time, Channels, Height, Width]
+    def forward(self, graph_data_t, time_spans):
+        x, edge_index, coords = graph_data_t.x, graph_data_t.edge_index, graph_data_t.coords
         
-        # Step A: 逐帧感知特征
-        batch, time, c, h, w = x_series.shape
-        x_flat = x_series.view(batch * time, c, h, w)
-        features = self.perception(x_flat) # -> [Batch, Time, Latent]
+        # Step A: GNN 空间特征提取
+        for conv in self.gnn_encoder:
+            x = torch.relu(conv(x, edge_index))
+            
+        # Step B: LNN 动力学演化 (输入包含非均匀时间 dt)
+        # x_evolved 预测下一时刻的节点特征
+        x_evolved, _ = self.dynamics(x.unsqueeze(0), times=time_spans)
+        x_evolved = x_evolved.squeeze(0)
         
-        # Step B: LNN 动力学演化
-        # prediction_latent 是预测的未来特征
-        prediction_latent, _ = self.dynamics(features, times=time_spans)
+        # Step C: GNN 还原至物理量
+        out = x_evolved
+        for conv in self.gnn_decoder[:-1]:
+            out = torch.relu(conv(out, edge_index))
+        out = self.gnn_decoder[-1](out, edge_index)
         
-        # Step C: 解码为势函数
-        psi_pred = self.decoder(prediction_latent)
+        # Step D: 分解变量并施加物理限制
+        psi_pred = out[:, 0]
+        # 强制热力学变量为正
+        rho_pred = self.softplus(out[:, 1]) 
+        T_pred = self.softplus(out[:, 2])
         
-        # Step D: 物理约束计算物理场
-        B_pred = self.physics_hard_constraint(psi_pred)
+        # Step E: 由势函数严格计算磁场
+        B_pred = self.physics_hard_constraint(psi_pred, edge_index, coords)
         
-        return B_pred, psi_pred
-
-```
-
-
-# 项目架构
-```text
-HyPhy-LNN/
-├── data/                   # 数据存放 (不要上传大文件到 git)
-│   ├── raw/                # 原始 JOREK 输出文件 (.h5, .dat)
-│   └── processed/          # 预处理后的 PyTorch Tensor (.pt)
-├── src/                    # 核心源代码
-│   ├── __init__.py
-│   ├── models/             # 模型定义
-│   │   ├── __init__.py
-│   │   ├── encoder.py      # 模块A: 感知层 (U-Net / CNN)
-│   │   ├── lnn_core.py     # 模块B: 动力学层 (CfC/LNN 封装)
-│   │   └── decoder.py      # 模块C: 物理硬约束与解码 (Psi -> B)
-│   ├── physics/            # 物理规则与 JOREK 接口
-│   │   ├── __init__.py
-│   │   ├── jorek_loader.py # 解析 JOREK 数据
-│   │   └── mhd_utils.py    # 磁面坐标变换、物理常数、微分算子
-│   └── utils/              # 工具函数
-│       ├── __init__.py
-│       ├── visualization.py# 画磁拓扑图、庞加莱图
-│       └── metrics.py      # 自定义评估指标 (e.g., div(B) check)
-├── experiments/            # 实验脚本
-│   ├── train_topology.py   # Level 1 训练脚本
-│   └── train_heatflux.py   # Level 2 训练脚本
-├── notebooks/              # Jupyter Notebooks (用于探索性分析)
-│   └── 01_data_preview.ipynb
-├── tests/                  # 单元测试 (保证各模块独立工作正常)
-├── requirements.txt        # 依赖清单
-├── verify_env.py           # 环境验证脚本
-├── minimal_lnn_test.py     # LNN 最小算例
-└── README.md               # 项目说明
-```
-
-
-Note that pytorch should be installed via official instructions from https://pytorch.org/get-started/locally/ to ensure CUDA compatibility.
-
-After pytorch is installed, run `pip install -r requirements.txt` to install other dependencies, then Run `python verify_env.py` to check your environment setup.
-
+        return B_pred, psi_pred, rho_pred, T_pred
