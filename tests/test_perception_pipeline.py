@@ -22,7 +22,7 @@ def test_perception_pipeline():
     
     print("\n3. Forward Pass (Extracting Topological Features)...")
     # 传入节点特征和边索引
-    latent_features = encoder(graph_data.x, graph_data.edge_index)
+    latent_features = encoder(graph_data.x, graph_data.edge_index, graph_data.pos)
     
     print(f"\n   Input shape:  {graph_data.x.shape} [Total_nodes, Input_Feat]")
     print(f"   Output shape: {latent_features.shape} [Total_nodes, Latent_Feat]")

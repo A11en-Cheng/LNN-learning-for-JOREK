@@ -3,7 +3,7 @@ import matplotlib.tri as tri
 import torch
 import os
 
-def plot_jorek_field(pos, values, triangles=None, title="JOREK Field", save_path=None, cmap='jet'):
+def plot_jorek_field(pos, values, triangles=None, title="JOREK Field", save_path=None, ax=None, cmap='jet'):
     """
     可视化 JOREK 非结构化网格上的标量场。
     严格遵守 'No Rasterization' 规则，直接使用节点坐标进行三角剖分渲染。
@@ -14,6 +14,7 @@ def plot_jorek_field(pos, values, triangles=None, title="JOREK Field", save_path
         triangles: 预定义的三角形拓扑 [Num_triangles, 3] (可选，用于精确渲染凹边界)
         title: 图表标题
         save_path: 保存路径 (如果为 None，则直接显示)
+        ax: Matplotlib Axis 对象 (可选，用于子图绘制)
         cmap: 颜色映射
     """
     # 确保数据在 CPU 上并转换为 numpy 数组
@@ -41,16 +42,25 @@ def plot_jorek_field(pos, values, triangles=None, title="JOREK Field", save_path
         print("Warning: No explicit triangles provided. Using Delaunay triangulation which may fill concave regions.")
         triang = tri.Triangulation(R, Z)
     
-    # 创建图表
-    fig, ax = plt.subplots(figsize=(8, 10))
+    # 创建图表 (如果外部未提供 ax)
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 10))
+        own_fig = True
+    else:
+        fig = ax.get_figure()
+        own_fig = False
     
     # 绘制等高线填充图
     # levels=50 提供平滑的颜色过渡
     contour = ax.tricontourf(triang, values, levels=50, cmap=cmap)
     
     # 添加颜色条
-    cbar = fig.colorbar(contour, ax=ax)
-    cbar.set_label('Value')
+    if own_fig:
+        cbar = fig.colorbar(contour, ax=ax)
+        cbar.set_label('Value')
+    else:
+        # 在子图中，颜色条通常由外部控制，或者是简单的
+        cbar = plt.colorbar(contour, ax=ax)
     
     # 设置标签和标题
     ax.set_xlabel('R [m]')
@@ -60,12 +70,13 @@ def plot_jorek_field(pos, values, triangles=None, title="JOREK Field", save_path
     # 保持 R 和 Z 的比例一致 (等离子体截面通常需要等比例显示)
     ax.axis('equal')
     
-    # 保存或显示
-    if save_path:
-        # 确保目录存在
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        print(f"Saved visualization to {save_path}")
-        plt.close(fig)
-    else:
-        plt.show()
+    # 保存或显示 (仅当自己拥有 Figure 控制权时)
+    if own_fig:
+        if save_path:
+            # 确保目录存在
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Saved visualization to {save_path}")
+            plt.close(fig)
+        else:
+            plt.show()

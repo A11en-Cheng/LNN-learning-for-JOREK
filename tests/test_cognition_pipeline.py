@@ -27,7 +27,7 @@ def test_cognition_pipeline():
     
     print("\n3. Forward Pass (Perception -> Cognition)...")
     # 3.1 Perception (GNN)
-    latent_features = encoder(batch_data.x, batch_data.edge_index)
+    latent_features = encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
     print(f"   GNN Output shape: {latent_features.shape} [Total_nodes, Latent_Feat]")
     
     # 3.2 Cognition (LNN)

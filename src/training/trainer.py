@@ -44,15 +44,19 @@ class JorekTrainer:
         self.optimizer.zero_grad()
         
         # 3. 前向传播 (Perception -> Cognition -> Reconstruction)
-        latent_features = self.encoder(batch_data.x, batch_data.edge_index)
+        latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
         # Processor 现在返回 (output, hidden_state)
         next_latent_features, _ = self.processor(latent_features, batch_data.batch)
-        pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch)
+        pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
         
         # 4. 计算损失
-        total_loss, loss_reg, loss_cls = self.criterion(
-            pred_states, target_states, pred_p_disrupt, target_p_disrupt
+        from src.models.loss import compute_spatial_weights
+        spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
+        total_loss, diagnostics = self.criterion(
+            pred_states, target_states, pred_p_disrupt, target_p_disrupt, node_weights=spatial_weights
         )
+        loss_reg = diagnostics.get("loss_reg", 0.0)
+        loss_cls = diagnostics.get("loss_cls", 0.0)
         
         # 5. 反向传播
         total_loss.backward()
@@ -77,13 +81,17 @@ class JorekTrainer:
         self.decoder.eval()
         
         with torch.no_grad():
-            latent_features = self.encoder(batch_data.x, batch_data.edge_index)
+            latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
             # Processor 现在返回 (output, hidden_state)
             next_latent_features, _ = self.processor(latent_features, batch_data.batch)
-            pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch)
+            pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
             
-            total_loss, loss_reg, loss_cls = self.criterion(
-                pred_states, target_states, pred_p_disrupt, target_p_disrupt
+            from src.models.loss import compute_spatial_weights
+            spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
+            total_loss, diagnostics = self.criterion(
+                pred_states, target_states, pred_p_disrupt, target_p_disrupt, node_weights=spatial_weights
             )
+            loss_reg = diagnostics.get("loss_reg", 0.0)
+            loss_cls = diagnostics.get("loss_cls", 0.0)
             
-        return total_loss.item(), loss_reg.item(), loss_cls.item(), pred_states, pred_p_disrupt
+        return total_loss.item(), loss_reg, loss_cls, pred_states, pred_p_disrupt

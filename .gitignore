@@ -216,3 +216,7 @@ data/*
 #redundant 
 redundant/*
 redundant/
+
+#output
+output/*
+output/

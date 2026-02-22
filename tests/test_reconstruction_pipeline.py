@@ -31,14 +31,14 @@ def test_reconstruction_pipeline():
     
     print("\n3. Forward Pass (Full Pipeline)...")
     # 3.1 Perception (GNN)
-    latent_features = encoder(batch_data.x, batch_data.edge_index)
+    latent_features = encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
     
     # 3.2 Cognition (LNN)
-    next_latent_features = processor(latent_features, batch_data.batch)
+    next_latent_features, _ = processor(latent_features, batch_data.batch)
     
     # 3.3 Reconstruction (GNN Decoder)
     # 预测 5 个核心变量和破裂概率
-    pred_state_vars, p_disrupt = decoder(next_latent_features, batch_data.edge_index, batch_data.batch)
+    pred_state_vars, p_disrupt = decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
     print(f"   Predicted State Vars shape: {pred_state_vars.shape} [Total_nodes, 5]")
     print(f"   Predicted P_disruption shape: {p_disrupt.shape} [Batch_size, 1]")
     

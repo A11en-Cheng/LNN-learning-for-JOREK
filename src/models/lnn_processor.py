@@ -38,7 +38,7 @@ class JorekLNNProcessor(nn.Module):
             )
             self.use_cfc = False
 
-    def forward(self, latent_x, batch_index, state=None, time_steps=None):
+    def forward(self, latent_x, batch_index=None, state=None, time_steps=None):
         """
         Args:
             latent_x: GNN 编码器输出的潜在特征 [Total_nodes, latent_dim]
@@ -57,12 +57,12 @@ class JorekLNNProcessor(nn.Module):
         # 还原为批次维度
         # 注意：这里假设每个图的节点数相同（对于同一个 JOREK 网格通常是成立的）
         # 将 PyG Batch 转换为 [Batch_Size, Num_Nodes, Feat]
-        # 使用 view 而不是 unbatch + stack 可能更高效，前提是节点数固定
-        # 但为了稳健性，如果节点数可能变化，unbatch 是对的。
-        # JOREK 网格通常是静态的，但也可能自适应细化。
-        # 这里为了通用性，先假设 batch_size * num_nodes = total_nodes
         
-        batch_size = batch_index.max().item() + 1
+        if batch_index is None:
+            batch_size = 1
+        else:
+            batch_size = batch_index.max().item() + 1
+            
         total_nodes = latent_x.size(0)
         num_nodes = total_nodes // batch_size
         feat_dim = latent_x.size(1)
