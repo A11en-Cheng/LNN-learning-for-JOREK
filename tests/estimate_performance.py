@@ -36,12 +36,12 @@ def estimate_performance():
         device = torch.device('cuda:0')
 
     # Mock Data Parameters
-    BATCH_SIZE = 4
-    SEQ_LEN = 100
+    BATCH_SIZE = 6
+    SEQ_LEN = 10
     NUM_NODES = 4125
     NUM_EDGES = 32186 # Approx based on JOREK grid
     INPUT_DIM = 5
-    HIDDEN_DIM = 64
+    HIDDEN_DIM = 100
     LATENT_DIM = 32
     
     # Create Mock Batch
@@ -71,9 +71,9 @@ def estimate_performance():
 
     # Initialize Models
     print("\nInitializing Models...")
-    encoder = JorekGNNEncoder(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=3).to(device)
-    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=1).to(device)
-    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=INPUT_DIM, num_layers=3).to(device)
+    encoder = JorekGNNEncoder(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=4).to(device)
+    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=2).to(device)
+    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=INPUT_DIM, num_layers=4).to(device)
     
     optimizer = torch.optim.Adam(
         list(encoder.parameters()) + list(processor.parameters()) + list(decoder.parameters()),
@@ -96,8 +96,8 @@ def estimate_performance():
             current_data = batch_sequence[t]
             latent_x = encoder(current_data.x, current_data.edge_index, current_data.pos)
             next_latent_x, hidden_state = processor(latent_x, current_data.batch, state=hidden_state)
-            pred_x, _ = decoder(next_latent_x, current_data.edge_index, current_data.batch, current_data.pos)
-            loss = pred_x.mean()
+            pred_x, pred_p = decoder(next_latent_x, current_data.edge_index, current_data.batch, current_data.pos)
+            loss = pred_x.mean() + pred_p.mean()
             loss.backward(retain_graph=True)
         optimizer.step()
         torch.cuda.synchronize() if torch.cuda.is_available() else None
@@ -117,10 +117,10 @@ def estimate_performance():
             # 2. Cognition
             next_latent_x, hidden_state = processor(latent_x, current_data.batch, state=hidden_state)
             # 3. Reconstruction
-            pred_x, _ = decoder(next_latent_x, current_data.edge_index, current_data.batch, current_data.pos)
+            pred_x, pred_p = decoder(next_latent_x, current_data.edge_index, current_data.batch, current_data.pos)
             
             # Mock Loss
-            loss = pred_x.sum()
+            loss = pred_x.sum() + pred_p.sum()
             loss.backward(retain_graph=True)
         
         optimizer.step()

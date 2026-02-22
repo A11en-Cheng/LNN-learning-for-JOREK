@@ -26,8 +26,8 @@ def train_interpolation_test():
     
     BATCH_SIZE = 4
     SEQ_LEN = 10        # 序列长度
-    EPOCHS = 100        # 训练轮次
-    LR = 2e-4
+    EPOCHS = 1000        # 训练轮次
+    LR = 5e-4
     
     # 模型规模参数
     HIDDEN_DIM = 64
@@ -77,6 +77,12 @@ def train_interpolation_test():
         if i >= 5: # 取前 6 个 batch 估算即可
             break
     all_x_tensor = torch.cat(all_x_samples, dim=0)
+    
+    # Phase 1.5: Log-Space Mapping for Thermodynamic Variables (rho, Te)
+    # Apply log1p(ReLU(x)) to compress dynamic range before Z-score
+    all_x_tensor[:, 2] = torch.log1p(torch.relu(all_x_tensor[:, 2]))
+    all_x_tensor[:, 3] = torch.log1p(torch.relu(all_x_tensor[:, 3]))
+    
     global_mean = all_x_tensor.mean(dim=0)
     global_std = all_x_tensor.std(dim=0) + 1e-6
     print(f"   Global Mean: {global_mean.tolist()}")
@@ -99,7 +105,7 @@ def train_interpolation_test():
     )
     
     # 赋予不同物理场权重，防止小量级场被忽略 (Rule 3)
-    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, channel_weights=[1.0, 10.0, 1.0, 1.0, 1.0])
+    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, channel_weights=[1.0, 20.0, 5.0, 5.0, 10.0])
 
     loss_history = {"train_loss": [], "test_loss": []}
     # 记录各个物理场的独立 Loss
@@ -132,8 +138,12 @@ def train_interpolation_test():
             for data in batch_sequence:
                 d = data.to(device)
                 if hasattr(d, 'x'):
+                    new_x = d.x.clone()
+                    # Phase 1.5: Log-Space Mapping for Thermodynamic Variables
+                    new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
+                    new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
                     # 严格执行全局 Z-score 归一化，不使用 arbitrary constants
-                    d.x = (d.x - global_mean) / global_std
+                    d.x = (new_x - global_mean) / global_std
                 processed_sequence.append(d)
 
             # Sequence Loop (Unroll temporal sequence)
@@ -191,7 +201,11 @@ def train_interpolation_test():
                 for data in batch_sequence:
                     d = data.to(device)
                     if hasattr(d, 'x'):
-                        d.x = (d.x - global_mean) / global_std
+                        new_x = d.x.clone()
+                        # Phase 1.5: Log-Space Mapping for Thermodynamic Variables
+                        new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
+                        new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+                        d.x = (new_x - global_mean) / global_std
                     processed_sequence.append(d)
 
                 hidden_state = None
@@ -228,6 +242,12 @@ def train_interpolation_test():
                         # 反归一化以获取真实的物理量级
                         pred_x_real = pred_x[mask] * global_std + global_mean
                         truth_x_real = next_data_target.x[mask] * global_std + global_mean
+                        
+                        # Phase 1.5: Reverse Log-Space Mapping for Thermodynamic Variables
+                        pred_x_real[:, 2] = torch.expm1(pred_x_real[:, 2])
+                        pred_x_real[:, 3] = torch.expm1(pred_x_real[:, 3])
+                        truth_x_real[:, 2] = torch.expm1(truth_x_real[:, 2])
+                        truth_x_real[:, 3] = torch.expm1(truth_x_real[:, 3])
                         
                         for ch_idx, var_name in enumerate(var_names):
                             p_val = pred_x_real[:, ch_idx]

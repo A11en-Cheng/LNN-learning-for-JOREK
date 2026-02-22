@@ -23,8 +23,8 @@ def verify_reliability():
     ROLLOUT_STEPS = 50
     SEQ_LEN = WARMUP_STEPS + ROLLOUT_STEPS
     
-    HIDDEN_DIM = 128
-    LATENT_DIM = 60
+    HIDDEN_DIM = 64
+    LATENT_DIM = 32
     
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     
