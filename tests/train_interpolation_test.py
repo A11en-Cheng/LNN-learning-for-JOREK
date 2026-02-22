@@ -14,7 +14,8 @@ from src.data.dataset import JorekSequenceDataset, collate_temporal_graphs
 from src.models.gnn_encoder import JorekGNNEncoder
 from src.models.lnn_processor import JorekLNNProcessor
 from src.models.gnn_decoder import JorekGNNDecoder
-from src.models.loss import JorekLoss, compute_spatial_weights
+from src.training.loss import JorekLoss
+from src.models.loss import compute_spatial_weights
 from src.utils.visualization import plot_jorek_field
 
 def train_interpolation_test():
@@ -26,7 +27,7 @@ def train_interpolation_test():
     
     BATCH_SIZE = 4
     SEQ_LEN = 10        # 序列长度
-    EPOCHS = 1000        # 训练轮次
+    EPOCHS = 100        # 训练轮次
     LR = 5e-4
     
     # 模型规模参数
@@ -105,7 +106,9 @@ def train_interpolation_test():
     )
     
     # 赋予不同物理场权重，防止小量级场被忽略 (Rule 3)
-    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, channel_weights=[1.0, 20.0, 5.0, 5.0, 10.0])
+    # 传入 stats 用于物理损失中的反归一化
+    stats = {'mean': global_mean, 'std': global_std}
+    criterion = JorekLoss(lambda_data=1.0, lambda_phys=0.01, stats=stats, dt=1.0)
 
     loss_history = {"train_loss": [], "test_loss": []}
     # 记录各个物理场的独立 Loss
@@ -165,12 +168,18 @@ def train_interpolation_test():
                 # 使用 current_data.x[:, 0] (Psi) 来计算权重
                 spatial_weights = compute_spatial_weights(current_data.x[:, 0], current_data.batch, axis_weight=10.0, pedestal_weight=5.0)
                 
-                step_loss, diagnostics = criterion(pred_x, next_data_target.x, pred_p, dummy_target_p, node_weights=spatial_weights)
+                # JorekLoss 现在接受 pred, target, graph_data, curr_state
+                step_loss = criterion(pred_x, next_data_target.x, current_data, curr_state=current_data.x)
                 loss_accum += step_loss
                 
-                # 累加通道 loss
-                for k in batch_channel_losses.keys():
-                    batch_channel_losses[k] += diagnostics[k]
+                # 累加通道 loss (这里简单记录 MSE 作为 diagnostics)
+                with torch.no_grad():
+                    mse_per_channel = torch.mean((pred_x - next_data_target.x)**2, dim=0)
+                    batch_channel_losses["loss_psi"] += mse_per_channel[0].item()
+                    batch_channel_losses["loss_phi"] += mse_per_channel[1].item()
+                    batch_channel_losses["loss_rho"] += mse_per_channel[2].item()
+                    batch_channel_losses["loss_Te"] += mse_per_channel[3].item()
+                    batch_channel_losses["loss_vpar"] += mse_per_channel[4].item()
             
             if loss_accum.item() == 0.0: continue
 
@@ -224,7 +233,7 @@ def train_interpolation_test():
                     # 计算空间权重 (Spatial Weighting)
                     spatial_weights = compute_spatial_weights(current_data.x[:, 0], current_data.batch, axis_weight=10.0, pedestal_weight=5.0)
                     
-                    loss_s, diagnostics = criterion(pred_x, next_data_target.x, pred_p, dummy_target_p, node_weights=spatial_weights)
+                    loss_s = criterion(pred_x, next_data_target.x, current_data, curr_state=current_data.x)
                     loss_accum += loss_s
                     
                     # --- 实时诊断逻辑：提取第一个 Batch 的第一条序列 ---

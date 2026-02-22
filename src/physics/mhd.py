@@ -31,7 +31,15 @@ def get_magnetic_field(psi_gradient: torch.Tensor, R: torch.Tensor, F0: float) -
     
     B_R = dpsi_dZ / R_safe
     B_Z = -dpsi_dR / R_safe
-    B_phi = torch.full_like(R_safe, F0) / R_safe
+    
+    if isinstance(F0, torch.Tensor):
+        # If F0 is already expanded to match R_safe shape, just divide
+        # Ensure F0 has the same shape as R_safe [num_nodes, 1]
+        if F0.shape != R_safe.shape:
+            F0 = F0.view(-1, 1)
+        B_phi = F0 / R_safe
+    else:
+        B_phi = torch.full_like(R_safe, float(F0)) / R_safe
     
     B_field = torch.cat([B_R, B_Z, B_phi], dim=-1)
     return B_field

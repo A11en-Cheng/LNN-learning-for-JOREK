@@ -78,6 +78,15 @@ class JorekLoss(nn.Module):
             elif hasattr(graph_data.norm_factors, 'F0'):
                 F0 = graph_data.norm_factors.F0
                 
+        # If F0 is a tensor (e.g., from a batch), we need to expand it to match the number of nodes
+        if isinstance(F0, torch.Tensor):
+            # graph_data.batch maps each node to its graph index in the batch
+            if hasattr(graph_data, 'batch') and graph_data.batch is not None:
+                F0 = F0[graph_data.batch].view(-1, 1)
+            else:
+                # If no batch info, assume all nodes belong to the same graph
+                F0 = F0[0].item() if F0.numel() > 0 else 1.0
+                
         # Compute Gradients on denormalized quantities
         # grad_rho: [num_nodes, 2]
         grad_rho = compute_gradient(rho_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
