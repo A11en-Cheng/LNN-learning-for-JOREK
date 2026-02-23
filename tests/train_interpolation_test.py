@@ -27,7 +27,7 @@ def train_interpolation_test():
     
     BATCH_SIZE = 4
     SEQ_LEN = 10        # 序列长度
-    EPOCHS = 100        # 训练轮次
+    EPOCHS = 3000        # 训练轮次
     LR = 5e-4
     
     # 模型规模参数
