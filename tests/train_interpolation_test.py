@@ -108,7 +108,7 @@ def train_interpolation_test():
     # 赋予不同物理场权重，防止小量级场被忽略 (Rule 3)
     # 传入 stats 用于物理损失中的反归一化
     stats = {'mean': global_mean, 'std': global_std}
-    criterion = JorekLoss(lambda_data=1.0, lambda_phys=0.01, stats=stats, dt=1.0)
+    criterion = JorekLoss(lambda_data=1.0, lambda_phys=0.0, stats=stats, dt=1.0)
 
     loss_history = {"train_loss": [], "test_loss": []}
     # 记录各个物理场的独立 Loss
@@ -121,12 +121,21 @@ def train_interpolation_test():
     print("\n[4/5] Starting Training Loop...")
     
     for epoch in range(1, EPOCHS + 1):
+        # --- Physics Loss Annealing ---
+        if epoch <= 1000:
+            criterion.lambda_phys = 0.0
+        elif epoch <= 2500:
+            # Linearly increase from 0.0 to 0.005
+            criterion.lambda_phys = 0.005 * (epoch - 1000) / 1500.0
+        else:
+            criterion.lambda_phys = 0.005
+            
         # --- Training ---
         encoder.train(); processor.train(); decoder.train()
         total_train_loss = 0
         
         if epoch % 10 == 0 or epoch == 1:
-            print(f"   Epoch {epoch}/{EPOCHS} running...")
+            print(f"   Epoch {epoch}/{EPOCHS} running... (lambda_phys: {criterion.lambda_phys:.5f})")
 
         for batch_sequence in train_loader:
             optimizer.zero_grad()

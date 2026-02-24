@@ -112,7 +112,8 @@ class JorekLoss(nn.Module):
         div_cart_rho_v = compute_divergence(rho_v_pol, graph_data.edge_index, graph_data.edge_attr).unsqueeze(-1)
         div_rho_v = div_cart_rho_v + rho_v_R / (R + 1e-8)
         
-        res_mass = (rho_next - rho_curr) / self.dt + div_rho_v
+        res_mass_raw = (rho_next - rho_curr) / self.dt + div_rho_v
+        res_mass = res_mass_raw / (torch.abs(rho_curr) + 1e-3)
         
         # --- Parallel Momentum Residual ---
         # v . grad(v_par) = v_R * d(v_par)/dR + v_Z * d(v_par)/dZ
@@ -129,7 +130,8 @@ class JorekLoss(nn.Module):
         B_dot_grad_rho_T = B_R * grad_rho_T[:, 0:1] + B_Z * grad_rho_T[:, 1:2]
         grad_par_rho_T = B_dot_grad_rho_T / B_mag
         
-        res_momentum = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_rho_T
+        res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_rho_T
+        res_momentum = res_momentum_raw / (torch.abs(rho_curr * v_par_curr) + 1e-3)
         
         # Physics Loss
         phys_loss = torch.mean(res_mass**2) + torch.mean(res_momentum**2)
