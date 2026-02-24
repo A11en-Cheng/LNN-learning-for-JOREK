@@ -1,5 +1,6 @@
 import sys
 import os
+import yaml
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -17,29 +18,41 @@ from src.physics.hard_constraints import ReducedMHDConstraints
 from src.models.loss import JorekLoss, compute_spatial_weights
 from src.utils.visualization import plot_jorek_field
 
-def train_sequence_pipeline():
+def load_config(config_path="config.yaml"):
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def train_sequence_pipeline(config_path="config.yaml"):
     # ================= 配置参数 (GPU Optimized) =================
-    DATA_DIR = "data/test_data_for_pipeline_EHL-2"
-    OUTPUT_DIR = "output/sequence_training"
-    MODEL_DIR = os.path.join(OUTPUT_DIR, "checkpoints")
-    VIS_DIR = os.path.join(OUTPUT_DIR, "vis")
+    config = load_config(config_path)
+    
+    DATA_DIR = config['data']['data_dir']
+    OUTPUT_DIR = config['data']['output_dir']
+    MODEL_DIR = config['data']['model_dir']
+    VIS_DIR = config['data']['vis_dir']
     
     # 针对 RTX 5070 Ti 激进调优
-    BATCH_SIZE = 8    # 增加 Batch Size 提高并行度 (From 4 -> 16)
-    SEQ_LEN = 10       # 保持适中的序列长度，或根据需要增加，但 Batch 优先
-    EPOCHS = 200       # 训练更多轮次
-    LR = 2e-4         # 稍微增大 LR 配合更大的 Batch Size
+    BATCH_SIZE = config['training']['batch_size']
+    SEQ_LEN = config['training']['seq_len']
+    EPOCHS = config['training']['epochs']
+    LR = config['training']['lr']
+    WEIGHT_DECAY = config['training']['weight_decay']
+    NUM_WORKERS = config['training']['num_workers']
     
     # 模型规模参数
-    HIDDEN_DIM = 256   # 增加网络宽度 (From 128 -> 256)
-    LATENT_DIM = 64    # 增加潜在空间 (From 32 -> 64)
-    
+    INPUT_DIM = config['model']['input_dim']
+    HIDDEN_DIM = config['model']['hidden_dim']
+    LATENT_DIM = config['model']['latent_dim']
+    ENC_LAYERS = config['model']['encoder_layers']
+    PROC_LAYERS = config['model']['processor_layers']
+    DEC_LAYERS = config['model']['decoder_layers']
     
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(VIS_DIR, exist_ok=True)
     
     print(f"==================================================")
     print(f"🚀 Starting Sequence Training Pipeline on EHL-2 Data (GPU Optimized)")
+    print(f"   Config: {config_path}")
     print(f"   Batch: {BATCH_SIZE}, Seq Len: {SEQ_LEN}, Epochs: {EPOCHS}")
     print(f"   Hidden: {HIDDEN_DIM}, Latent: {LATENT_DIM}")
     print(f"==================================================")
@@ -63,7 +76,7 @@ def train_sequence_pipeline():
     print(f"   Val Samples:   {len(val_dataset)}")
     
     # Num Workers 增加数据加载并行度
-    num_workers = min(8, os.cpu_count()) 
+    num_workers = min(NUM_WORKERS, os.cpu_count()) 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True,  collate_fn=collate_temporal_graphs, num_workers=num_workers, persistent_workers=True)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_temporal_graphs, num_workers=num_workers, persistent_workers=True)
 
@@ -73,15 +86,26 @@ def train_sequence_pipeline():
     print(f"   Using device: {device}")
     
     # 使用更大的模型规模
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=4).to(device) # Layers 3->4
-    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=2).to(device) # Layers 1->2
-    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=5, num_layers=4).to(device) # Layers 3->4
+    encoder = JorekGNNEncoder(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=ENC_LAYERS).to(device)
+    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=PROC_LAYERS).to(device)
+    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=INPUT_DIM, num_layers=DEC_LAYERS).to(device)
+    
+    # Load pretrained models if specified
+    if config['pretrained']['encoder']:
+        print(f"   Loading pretrained encoder from {config['pretrained']['encoder']}")
+        encoder.load_state_dict(torch.load(config['pretrained']['encoder'], map_location=device))
+    if config['pretrained']['processor']:
+        print(f"   Loading pretrained processor from {config['pretrained']['processor']}")
+        processor.load_state_dict(torch.load(config['pretrained']['processor'], map_location=device))
+    if config['pretrained']['decoder']:
+        print(f"   Loading pretrained decoder from {config['pretrained']['decoder']}")
+        decoder.load_state_dict(torch.load(config['pretrained']['decoder'], map_location=device))
     
     # 我们将所有参数放入优化器
     # Reduced LR to 1e-5 for stability
     optimizer = torch.optim.AdamW(
         list(encoder.parameters()) + list(processor.parameters()) + list(decoder.parameters()),
-        lr=LR, weight_decay=1e-5
+        lr=LR, weight_decay=WEIGHT_DECAY
     )
     
     criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.1)
@@ -393,4 +417,9 @@ def train_sequence_pipeline():
         print(f"Model checkpoints saved in {OUTPUT_DIR}")
 
 if __name__ == "__main__":
-    train_sequence_pipeline()
+    import argparse
+    parser = argparse.ArgumentParser(description="Train HyPhy-GLNN Sequence Pipeline")
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
+    args = parser.parse_args()
+    
+    train_sequence_pipeline(args.config)

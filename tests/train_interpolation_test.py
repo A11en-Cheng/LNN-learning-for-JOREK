@@ -1,5 +1,6 @@
 import sys
 import os
+import yaml
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
@@ -18,27 +19,47 @@ from src.training.loss import JorekLoss
 from src.models.loss import compute_spatial_weights
 from src.utils.visualization import plot_jorek_field
 
-def train_interpolation_test():
+def load_config(config_path="config.yaml"):
+    with open(config_path, 'r') as f:
+        return yaml.safe_load(f)
+
+def train_interpolation_test(config_path="config.yaml"):
     # ================= 配置参数 =================
-    DATA_DIR = "data/test_data_for_pipeline_EHL-2"
-    OUTPUT_DIR = "output/interpolation_test"
-    MODEL_DIR = os.path.join(OUTPUT_DIR, "checkpoints")
-    VIS_DIR = os.path.join(OUTPUT_DIR, "vis")
+    config = load_config(config_path)
     
-    BATCH_SIZE = 4
-    SEQ_LEN = 10        # 序列长度
-    EPOCHS = 3000        # 训练轮次
-    LR = 5e-4
+    DATA_DIR = config['data']['data_dir']
+    OUTPUT_DIR = config['data']['output_dir']
+    MODEL_DIR = config['data']['model_dir']
+    VIS_DIR = config['data']['vis_dir']
+    
+    BATCH_SIZE = config['training']['batch_size']
+    SEQ_LEN = config['training']['seq_len']
+    EPOCHS = config['training']['epochs']
+    LR = config['training']['lr']
+    WEIGHT_DECAY = config['training']['weight_decay']
+    NUM_WORKERS = config['training']['num_workers']
     
     # 模型规模参数
-    HIDDEN_DIM = 64
-    LATENT_DIM = 32
+    INPUT_DIM = config['model']['input_dim']
+    HIDDEN_DIM = config['model']['hidden_dim']
+    LATENT_DIM = config['model']['latent_dim']
+    ENC_LAYERS = config['model']['encoder_layers']
+    PROC_LAYERS = config['model']['processor_layers']
+    DEC_LAYERS = config['model']['decoder_layers']
+    
+    # 物理损失参数
+    LAMBDA_DATA = config['physics']['lambda_data']
+    LAMBDA_PHYS_MAX = config['physics']['lambda_phys_max']
+    PHYS_WARMUP = config['physics']['phys_warmup_epochs']
+    PHYS_ANNEAL = config['physics']['phys_anneal_epochs']
+    DT = config['physics']['dt']
     
     os.makedirs(MODEL_DIR, exist_ok=True)
     os.makedirs(VIS_DIR, exist_ok=True)
     
     print(f"==================================================")
     print(f"🚀 Starting Interpolation Test (Held-out Test Set)")
+    print(f"   Config: {config_path}")
     print(f"   Batch: {BATCH_SIZE}, Seq Len: {SEQ_LEN}, Epochs: {EPOCHS}")
     print(f"==================================================")
 
@@ -64,7 +85,7 @@ def train_interpolation_test():
     print(f"   Train Samples: {len(train_subset)} (Indices like 0,1,2,3, 5,6,7,8...)")
     print(f"   Test Samples:  {len(test_subset)}  (Indices like 4, 9, 14...)")
     
-    num_workers = min(4, os.cpu_count() or 1) 
+    num_workers = min(NUM_WORKERS, os.cpu_count() or 1) 
     train_loader = DataLoader(train_subset, batch_size=BATCH_SIZE, shuffle=True,  collate_fn=collate_temporal_graphs, num_workers=num_workers)
     test_loader = DataLoader(test_subset, batch_size=1, shuffle=False, collate_fn=collate_temporal_graphs, num_workers=num_workers)
 
@@ -96,19 +117,30 @@ def train_interpolation_test():
     global_mean = global_mean.to(device)
     global_std = global_std.to(device)
     
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=4).to(device)
-    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=2).to(device)
-    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=5, num_layers=4).to(device)
+    encoder = JorekGNNEncoder(input_dim=INPUT_DIM, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=ENC_LAYERS).to(device)
+    processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=PROC_LAYERS).to(device)
+    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=INPUT_DIM, num_layers=DEC_LAYERS).to(device)
+    
+    # Load pretrained models if specified
+    if config['pretrained']['encoder']:
+        print(f"   Loading pretrained encoder from {config['pretrained']['encoder']}")
+        encoder.load_state_dict(torch.load(config['pretrained']['encoder'], map_location=device))
+    if config['pretrained']['processor']:
+        print(f"   Loading pretrained processor from {config['pretrained']['processor']}")
+        processor.load_state_dict(torch.load(config['pretrained']['processor'], map_location=device))
+    if config['pretrained']['decoder']:
+        print(f"   Loading pretrained decoder from {config['pretrained']['decoder']}")
+        decoder.load_state_dict(torch.load(config['pretrained']['decoder'], map_location=device))
     
     optimizer = torch.optim.AdamW(
         list(encoder.parameters()) + list(processor.parameters()) + list(decoder.parameters()),
-        lr=LR, weight_decay=1e-5
+        lr=LR, weight_decay=WEIGHT_DECAY
     )
     
     # 赋予不同物理场权重，防止小量级场被忽略 (Rule 3)
     # 传入 stats 用于物理损失中的反归一化
     stats = {'mean': global_mean, 'std': global_std}
-    criterion = JorekLoss(lambda_data=1.0, lambda_phys=0.0, stats=stats, dt=1.0)
+    criterion = JorekLoss(lambda_data=LAMBDA_DATA, lambda_phys=0.0, stats=stats, dt=DT)
 
     loss_history = {"train_loss": [], "test_loss": []}
     # 记录各个物理场的独立 Loss
@@ -122,13 +154,13 @@ def train_interpolation_test():
     
     for epoch in range(1, EPOCHS + 1):
         # --- Physics Loss Annealing ---
-        if epoch <= 1000:
+        if epoch <= PHYS_WARMUP:
             criterion.lambda_phys = 0.0
-        elif epoch <= 2500:
-            # Linearly increase from 0.0 to 0.005
-            criterion.lambda_phys = 0.005 * (epoch - 1000) / 1500.0
+        elif epoch <= PHYS_WARMUP + PHYS_ANNEAL:
+            # Linearly increase from 0.0 to LAMBDA_PHYS_MAX
+            criterion.lambda_phys = LAMBDA_PHYS_MAX * (epoch - PHYS_WARMUP) / PHYS_ANNEAL
         else:
-            criterion.lambda_phys = 0.005
+            criterion.lambda_phys = LAMBDA_PHYS_MAX
             
         # --- Training ---
         encoder.train(); processor.train(); decoder.train()
@@ -415,4 +447,9 @@ def train_interpolation_test():
     print(f"✅ Interpolation Test Completed. Results in {OUTPUT_DIR}")
 
 if __name__ == "__main__":
-    train_interpolation_test()
+    import argparse
+    parser = argparse.ArgumentParser(description="Train HyPhy-GLNN Interpolation Test")
+    parser.add_argument("--config", type=str, default="config.yaml", help="Path to config file")
+    args = parser.parse_args()
+    
+    train_interpolation_test(args.config)

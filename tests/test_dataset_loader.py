@@ -23,7 +23,7 @@ def test_jorek_sequence_loader():
     print("Initializing Data Setup for Test...")
     
     # 获取测试数据目录
-    data_dir = "data/test_data_for_pipeline_EHL-2"
+    data_dir = "data/test_data_for_ITER_SPI_fast"
     
     # 简单的预检查：确保有足够的测试 HFD5 文件
     files = sorted(os.listdir(data_dir))

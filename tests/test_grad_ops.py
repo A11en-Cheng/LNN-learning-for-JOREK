@@ -25,7 +25,7 @@ def test_grad_ops():
         return
         
     # Get the first frame
-    data_seq = dataset[0]
+    data_seq = dataset[-1]
     graph_data = data_seq[0]
     
     print(f"   Loaded graph with {graph_data.num_nodes} nodes and {graph_data.num_edges} edges.")
