@@ -210,7 +210,16 @@ def train_interpolation_test(config_path="config.yaml"):
                 spatial_weights = compute_spatial_weights(current_data.x[:, 0], current_data.batch, axis_weight=10.0, pedestal_weight=5.0)
                 
                 # JorekLoss 现在接受 pred, target, graph_data, curr_state
-                step_loss = criterion(pred_x, next_data_target.x, current_data, curr_state=current_data.x)
+                boundary_attr = current_data.boundary if hasattr(current_data, 'boundary') else None
+                freeboundary_attr = current_data.freeboundary if hasattr(current_data, 'freeboundary') else None
+                step_loss = criterion(
+                    pred_x,
+                    next_data_target.x,
+                    current_data,
+                    curr_state=current_data.x,
+                    boundary=boundary_attr,
+                    freeboundary=freeboundary_attr,
+                )
                 loss_accum += step_loss
                 
                 # 累加通道 loss (这里简单记录 MSE 作为 diagnostics)
@@ -274,7 +283,16 @@ def train_interpolation_test(config_path="config.yaml"):
                     # 计算空间权重 (Spatial Weighting)
                     spatial_weights = compute_spatial_weights(current_data.x[:, 0], current_data.batch, axis_weight=10.0, pedestal_weight=5.0)
                     
-                    loss_s = criterion(pred_x, next_data_target.x, current_data, curr_state=current_data.x)
+                    boundary_attr = current_data.boundary if hasattr(current_data, 'boundary') else None
+                    freeboundary_attr = current_data.freeboundary if hasattr(current_data, 'freeboundary') else None
+                    loss_s = criterion(
+                        pred_x,
+                        next_data_target.x,
+                        current_data,
+                        curr_state=current_data.x,
+                        boundary=boundary_attr,
+                        freeboundary=freeboundary_attr,
+                    )
                     loss_accum += loss_s
                     
                     # --- 实时诊断逻辑：提取第一个 Batch 的第一条序列 ---

@@ -15,9 +15,9 @@ from src.models.gnn_decoder import JorekGNNDecoder
 
 def verify_reliability():
     # ================= 配置参数 =================
-    DATA_DIR = "data/test_data_for_pipeline_EHL-2"
-    OUTPUT_DIR = "output/verification"
-    CHECKPOINT_PATH = "output/interpolation_test/checkpoints/latest_model.pt" # 假设的权重路径
+    DATA_DIR = "data/test_data_for_ITER_SPI_fast"
+    OUTPUT_DIR = "output/verification_ITER_SPI_fast"
+    CHECKPOINT_PATH = "output/interpolation_test_ITER/checkpoints/latest_model.pt" # 假设的权重路径
     
     WARMUP_STEPS = 10
     ROLLOUT_STEPS = 50

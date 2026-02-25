@@ -10,12 +10,14 @@ from src.physics.cocos8 import reconstruct_velocity
 class JorekLoss(nn.Module):
     """
     Physics-Informed Loss function for HyPhy-GLNN.
-    Combines data-driven loss (Huber/Log-Cosh) with physics constraints (Mass Continuity, Parallel Momentum).
+    Combines data-driven loss (Huber/Log-Cosh) with physics constraints (Mass Continuity, Parallel Momentum)
+    and exact boundary anchoring from JOREK metadata.
     """
-    def __init__(self, lambda_data=1.0, lambda_phys=0.01, stats=None, dt=1.0):
+    def __init__(self, lambda_data=1.0, lambda_phys=0.01, lambda_bc=10.0, stats=None, dt=1.0):
         super().__init__()
         self.lambda_data = lambda_data
         self.lambda_phys = lambda_phys
+        self.lambda_bc = lambda_bc
         self.dt = dt
         # stats should be a dict with 'mean' and 'std' tensors of shape [5]
         self.stats = stats
@@ -30,7 +32,7 @@ class JorekLoss(nn.Module):
         std = self.stats['std'].to(x.device)
         return x * std + mean
 
-    def forward(self, pred, target, graph_data, curr_state=None):
+    def forward(self, pred, target, graph_data, curr_state=None, boundary=None, freeboundary=None):
         """
         Compute the total loss.
         
@@ -43,12 +45,47 @@ class JorekLoss(nn.Module):
         Returns:
             total_loss: Scalar loss value
         """
+        device = pred.device
+
+        # Determine boundary metadata
+        boundary_tensor = None
+        if boundary is None and hasattr(graph_data, 'boundary'):
+            boundary = graph_data.boundary
+        if boundary is not None:
+            if isinstance(boundary, torch.Tensor):
+                boundary_tensor = boundary.to(device).view(-1)
+            else:
+                boundary_tensor = torch.tensor(boundary, dtype=torch.long, device=device).view(-1)
+        internal_mask = None
+        boundary_mask = None
+        if boundary_tensor is not None:
+            internal_mask = (boundary_tensor == 0)
+            boundary_mask = (boundary_tensor > 0)
+
+        # Determine freeboundary flag
+        if freeboundary is None and hasattr(graph_data, 'freeboundary'):
+            freeboundary = graph_data.freeboundary
+        if isinstance(freeboundary, torch.Tensor):
+            freeboundary_flag = bool(int(freeboundary.view(-1)[0].item()))
+        elif freeboundary is None:
+            freeboundary_flag = True
+        else:
+            freeboundary_flag = bool(freeboundary)
+
         # 1. Data-driven loss (Huber Loss for stiffness)
-        # Using smooth_l1_loss which is equivalent to Huber loss
         data_loss = F.smooth_l1_loss(pred, target, reduction='mean')
         
         if self.lambda_phys <= 0.0:
-            return data_loss
+            loss_bc = torch.tensor(0.0, device=device)
+            if boundary_mask is not None and boundary_mask.any():
+                pred_bnd = pred[boundary_mask]
+                target_bnd = target[boundary_mask]
+                if pred_bnd.shape[0] > 0:
+                    loss_bc_plasma = F.mse_loss(pred_bnd[:, 1:], target_bnd[:, 1:])
+                    psi_penalty = 5.0 if freeboundary_flag else 50.0
+                    loss_bc_psi = F.mse_loss(pred_bnd[:, 0], target_bnd[:, 0]) * psi_penalty
+                    loss_bc = loss_bc_plasma + loss_bc_psi
+            return data_loss + self.lambda_bc * loss_bc
             
         # 2. Physics-informed loss
         if curr_state is None:
@@ -132,10 +169,28 @@ class JorekLoss(nn.Module):
         
         res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_rho_T
         res_momentum = res_momentum_raw / (torch.abs(rho_curr * v_par_curr) + 1e-3)
-        
-        # Physics Loss
-        phys_loss = torch.mean(res_mass**2) + torch.mean(res_momentum**2)
-        
-        total_loss = self.lambda_data * data_loss + self.lambda_phys * phys_loss
+
+        # Physics Loss only on internal nodes
+        zero = torch.tensor(0.0, device=device)
+        if internal_mask is not None and internal_mask.any():
+            mass_term = torch.mean(res_mass[internal_mask] ** 2)
+            mom_term = torch.mean(res_momentum[internal_mask] ** 2)
+        else:
+            mass_term = torch.mean(res_mass ** 2)
+            mom_term = torch.mean(res_momentum ** 2)
+        phys_loss = mass_term + mom_term
+
+        # Boundary condition anchoring
+        loss_bc = zero
+        if boundary_mask is not None and boundary_mask.any():
+            pred_bnd = pred[boundary_mask]
+            target_bnd = target[boundary_mask]
+            if pred_bnd.shape[0] > 0:
+                loss_bc_plasma = F.mse_loss(pred_bnd[:, 1:], target_bnd[:, 1:])
+                psi_penalty = 5.0 if freeboundary_flag else 50.0
+                loss_bc_psi = F.mse_loss(pred_bnd[:, 0], target_bnd[:, 0]) * psi_penalty
+                loss_bc = loss_bc_plasma + loss_bc_psi
+
+        total_loss = self.lambda_data * data_loss + self.lambda_phys * phys_loss + self.lambda_bc * loss_bc
         
         return total_loss
