@@ -44,7 +44,9 @@ class JorekLNNProcessor(nn.Module):
             latent_x: GNN 编码器输出的潜在特征 [Total_nodes, latent_dim]
             batch_index: PyG 的 batch 索引向量 [Total_nodes]
             state: RNN/LNN 的隐藏状态 (None for init)
-            time_steps: 时间步长信息 (可选，CfC 可以利用时间信息)
+            time_steps: 时间步长信息 (可选)。
+                        推荐传入一个标量 Δt（物理时间间隔），
+                        LNN 将在当前时间步对所有节点使用相同的 Δt 进行连续时间积分。
         Returns:
             next_latent_output: LNN 的输出特征 [Total_nodes, latent_dim]
             next_state: 更新后的隐藏状态
@@ -83,7 +85,22 @@ class JorekLNNProcessor(nn.Module):
         # 3. LNN 前向传播
         if self.use_cfc:
             # CfC returns: output, state
-            output, next_state = self.rnn(seq_x, state, timespans=time_steps)
+            # 这里将 time_steps 解释为“当前时间步的物理时间间隔 Δt”
+            # 为了与 ncps.CfC 的接口兼容，使用 shape=[1, 1] 的 timespans，
+            # 使其在内部被视为对所有 batch 元素共享的标量 Δt。
+            timespans = None
+            if time_steps is not None:
+                if not isinstance(time_steps, torch.Tensor):
+                    time_steps = torch.tensor(time_steps, dtype=seq_x.dtype, device=seq_x.device)
+                # 标量 Δt 或形如 [1] 的向量都折叠为 [1,1]
+                if time_steps.dim() == 0:
+                    timespans = time_steps.view(1, 1)
+                elif time_steps.dim() == 1 and time_steps.numel() == 1:
+                    timespans = time_steps.view(1, 1)
+                else:
+                    # 如果传入了更高维度的 dt，这里退化为取其均值作为全局 Δt
+                    timespans = time_steps.mean().view(1, 1)
+            output, next_state = self.rnn(seq_x, state, timespans=timespans)
         else:
             # GRU returns: output, h_n
             output, next_state = self.rnn(seq_x, state)

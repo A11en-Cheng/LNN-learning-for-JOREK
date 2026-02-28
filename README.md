@@ -126,3 +126,6 @@ class HyPhyGLNN(nn.Module):
         B_pred = self.physics_hard_constraint(psi_pred, edge_index, coords)
         
         return B_pred, psi_pred, rho_pred, T_pred
+
+```
+

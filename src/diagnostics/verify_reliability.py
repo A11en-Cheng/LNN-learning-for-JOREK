@@ -15,12 +15,13 @@ from src.models.gnn_decoder import JorekGNNDecoder
 
 def verify_reliability():
     # ================= 配置参数 =================
-    DATA_DIR = "data/test_data_for_ITER_SPI_fast"
-    OUTPUT_DIR = "output/verification_ITER_SPI_fast"
-    CHECKPOINT_PATH = "output/interpolation_test_ITER/checkpoints/latest_model.pt" # 假设的权重路径
+    # DATA_DIR = "data/test_data_for_ITER_SPI_fast"
+    DATA_DIR = "data/test_data_for_BEST"
+    OUTPUT_DIR = "output/verification_BEST"
+    CHECKPOINT_PATH = "output/interpolation_test_BEST/checkpoints/latest_model.pt" # 权重路径
     
-    WARMUP_STEPS = 10
-    ROLLOUT_STEPS = 50
+    WARMUP_STEPS = 6
+    ROLLOUT_STEPS = 40
     SEQ_LEN = WARMUP_STEPS + ROLLOUT_STEPS
     
     HIDDEN_DIM = 64
@@ -44,8 +45,11 @@ def verify_reliability():
     test_seq = dataset[0] 
     
     print("Computing Global Normalization Statistics...")
-    # 为了准确，我们使用整个序列计算均值和方差 (实际应用中应加载训练时保存的 mean/std)
-    all_x = torch.cat([data.x for data in test_seq], dim=0)
+    # 为了准确，我们使用整个序列计算均值和方差
+    # Phase 1.5: 在归一化前对 rho / Te 做 log1p(ReLU(.))，与训练脚本保持一致
+    all_x = torch.cat([data.x for data in test_seq], dim=0).clone()
+    all_x[:, 2] = torch.log1p(torch.relu(all_x[:, 2]))
+    all_x[:, 3] = torch.log1p(torch.relu(all_x[:, 3]))
     global_mean = all_x.mean(dim=0)
     global_std = all_x.std(dim=0) + 1e-6
 
@@ -66,6 +70,12 @@ def verify_reliability():
         encoder.load_state_dict(checkpoint['encoder'])
         processor.load_state_dict(checkpoint['processor'])
         decoder.load_state_dict(checkpoint['decoder'])
+
+        # 如果 checkpoint 中包含训练时的全局统计量，则优先生效
+        if 'global_mean' in checkpoint and 'global_std' in checkpoint:
+            print("Using global_mean/std from checkpoint for consistency with training...")
+            global_mean = checkpoint['global_mean'].to(device)
+            global_std = checkpoint['global_std'].to(device)
     else:
         print("⚠️ WARNING: No checkpoint found. Running with untrained initialized weights for pipeline verification.")
 
@@ -83,32 +93,66 @@ def verify_reliability():
         # --- Phase 1: Warm-up (Teacher Forcing) ---
         for t in range(WARMUP_STEPS):
             gt_data = test_seq[t].to(device)
-            norm_x = (gt_data.x - global_mean) / global_std
+
+            # 与训练脚本一致的预处理：log-space + 全局 Z-score
+            new_x = gt_data.x.clone()
+            new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
+            new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+            norm_x = (new_x - global_mean) / global_std
             
             latent = encoder(norm_x, gt_data.edge_index, gt_data.pos)
             latent, hidden_state = processor(latent, getattr(gt_data, 'batch', None), hidden_state)
-            pred_norm, _ = decoder(latent, gt_data.edge_index, getattr(gt_data, 'batch', None), gt_data.pos)
+
+            # Phase 2.5: 解码器输出 Δx（归一化空间残差）
+            pred_delta_norm, _ = decoder(
+                latent,
+                gt_data.edge_index,
+                getattr(gt_data, 'batch', None),
+                gt_data.pos,
+            )
+
+            # 得到该步对下一时刻的预测：x_{t+1} = x_t + Δx_t
+            pred_next_norm = norm_x + pred_delta_norm
             
             if t == WARMUP_STEPS - 1:
-                current_pred_norm = pred_norm # 准备进入 Free Run 的初始预测值
+                # 用最后一个 warm-up 步的预测作为 Free Run 初始状态
+                current_pred_norm = pred_next_norm
                 
-        # --- Phase 2: Free Run (Autoregressive) ---
+        # --- Phase 2: Free Run (Autoregressive, Residual Form) ---
         for t in range(WARMUP_STEPS, SEQ_LEN):
             gt_data = test_seq[t].to(device)
             
-            # 反归一化记录
+            # 反归一化记录：先撤销 Z-score，再撤销 log-space（只对 rho / Te）
             pred_real = current_pred_norm * global_std + global_mean
-            gt_real = gt_data.x
+            gt_raw = gt_data.x.clone()
+
+            # Reverse log-space for rho / Te
+            pred_real[:, 2] = torch.expm1(pred_real[:, 2])
+            pred_real[:, 3] = torch.expm1(pred_real[:, 3])
+
+            # gt_raw 本身就是物理空间，无需 log 反变换
+            pred_real = pred_real
+            gt_real = gt_raw
             
             predictions_real.append(pred_real.cpu())
             ground_truths_real.append(gt_real.cpu())
             times.append(t)
             
             if t < SEQ_LEN - 1:
-                # 关键：将上一时间步的预测值作为当前时间步的输入
+                # 关键：将上一时间步的预测值作为当前时间步的输入（残差形式）
+                # current_pred_norm 已经是 log+Z-score 之后的归一化状态，直接送入网络
                 latent = encoder(current_pred_norm, gt_data.edge_index, gt_data.pos)
                 latent, hidden_state = processor(latent, getattr(gt_data, 'batch', None), hidden_state)
-                current_pred_norm, _ = decoder(latent, gt_data.edge_index, getattr(gt_data, 'batch', None), gt_data.pos)
+
+                pred_delta_norm, _ = decoder(
+                    latent,
+                    gt_data.edge_index,
+                    getattr(gt_data, 'batch', None),
+                    gt_data.pos,
+                )
+
+                # 自回归：x_{t+1} = x_t + Δx_t（全程在归一化空间中演化）
+                current_pred_norm = current_pred_norm + pred_delta_norm
 
     # 计算误差累积 (Error Accumulation)
     error_accumulation = {
