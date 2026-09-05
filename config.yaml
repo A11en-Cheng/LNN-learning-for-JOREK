@@ -23,7 +23,8 @@ training:
   num_workers: 4
 
 model:
-  input_dim: 5
+  input_dim: 9
+  output_dim: 9
   hidden_dim: 64
   latent_dim: 32
   encoder_layers: 4

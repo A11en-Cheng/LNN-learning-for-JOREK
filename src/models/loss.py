@@ -339,14 +339,14 @@ class JorekPhysicsLoss(nn.Module):
         self.lambda_phys = lambda_phys
         self.lambda_bc = lambda_bc
         self.dt = dt
-        # stats 应为 {'mean': Tensor[5], 'std': Tensor[5]}，用于反归一化
+        # stats 应为 {'mean': Tensor[9], 'std': Tensor[9]}，用于反归一化
         self.stats = stats
 
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
         """将 Z-score + log1p 映射后的特征恢复到物理空间。
 
         1. 先做 Z-score 反变换: x_linear = x * std + mean
-        2. 再对 rho/Te 反 log1p: expm1，并做轻微 clamp，避免在 PDE 残差计算中除零。
+        2. 再对 rho/T_i/rho_n/T_e 反 log1p: expm1，并做轻微 clamp，避免在 PDE 残差计算中除零。
         """
         if self.stats is None:
             return x
@@ -360,30 +360,28 @@ class JorekPhysicsLoss(nn.Module):
         # 2. Reverse Log-Space for Thermodynamic variables（无原地操作版本）
         psi = x_linear[:, 0:1]
         Phi = x_linear[:, 1:2]
+        z_j = x_linear[:, 2:3]
+        omega = x_linear[:, 3:4]
 
-        rho_log = x_linear[:, 2:3]
-        Te_log = x_linear[:, 3:4]
+        rho = torch.clamp(torch.expm1(x_linear[:, 4:5]), min=1e-8)
+        t_i = torch.clamp(torch.expm1(x_linear[:, 5:6]), min=1e-8)
 
-        rho = torch.expm1(rho_log)
-        Te = torch.expm1(Te_log)
+        v_par = x_linear[:, 6:7]
 
-        # Clamp 以避免在残差里出现除零
-        rho = torch.clamp(rho, min=1e-8)
-        Te = torch.clamp(Te, min=1e-8)
+        rho_n = torch.clamp(torch.expm1(x_linear[:, 7:8]), min=1e-8)
+        t_e = torch.clamp(torch.expm1(x_linear[:, 8:9]), min=1e-8)
 
-        v_par = x_linear[:, 4:5]
-
-        x_phys = torch.cat([psi, Phi, rho, Te, v_par], dim=-1)
+        x_phys = torch.cat([psi, Phi, z_j, omega, rho, t_i, v_par, rho_n, t_e], dim=-1)
         return x_phys
 
     def forward(self, pred, target, graph_data, curr_state=None, boundary=None, freeboundary=None):
         """计算总损失（数据 + 物理 + 边界）。
 
         Args:
-            pred: 预测的下一步节点特征 [N, 5]（归一化空间）
-            target: 目标下一步节点特征 [N, 5]（归一化空间）
+            pred: 预测的下一步节点特征 [N, 9]（归一化空间）
+            target: 目标下一步节点特征 [N, 9]（归一化空间）
             graph_data: PyG Data，包含 edge_index/edge_attr/pos/batch 等
-            curr_state: 当前时刻节点特征 [N, 5]（归一化），缺省为 graph_data.x
+            curr_state: 当前时刻节点特征 [N, 9]（归一化），缺省为 graph_data.x
             boundary: 可选边界标记张量 [N]
             freeboundary: 自由边界 vs 固定边界 标志
         """

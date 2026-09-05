@@ -136,10 +136,10 @@ def train_interpolation_test(config_path="config.yaml"):
             break
     all_x_tensor = torch.cat(all_x_samples, dim=0)
     
-    # Phase 1.5: Log-Space Mapping for Thermodynamic Variables (rho, Te)
+    # Phase 1.5: Log-Space Mapping for Thermodynamic Variables (rho, T_i, rho_n, T_e)
     # Apply log1p(ReLU(x)) to compress dynamic range before Z-score
-    all_x_tensor[:, 2] = torch.log1p(torch.relu(all_x_tensor[:, 2]))
-    all_x_tensor[:, 3] = torch.log1p(torch.relu(all_x_tensor[:, 3]))
+    for idx in [4, 5, 7, 8]:
+        all_x_tensor[:, idx] = torch.log1p(torch.relu(all_x_tensor[:, idx]))
     
     global_mean = all_x_tensor.mean(dim=0)
     global_std = all_x_tensor.std(dim=0) + 1e-6
@@ -242,8 +242,8 @@ def train_interpolation_test(config_path="config.yaml"):
                 if hasattr(d, 'x'):
                     new_x = d.x.clone()
                     # Phase 1.5: Log-Space Mapping for Thermodynamic Variables
-                    new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
-                    new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+                    for idx in [4, 5, 7, 8]:
+                        new_x[:, idx] = torch.log1p(torch.relu(new_x[:, idx]))
                     # 严格执行全局 Z-score 归一化，不使用 arbitrary constants
                     d.x = (new_x - global_mean) / global_std
                 processed_sequence.append(d)
@@ -346,8 +346,8 @@ def train_interpolation_test(config_path="config.yaml"):
                     if hasattr(d, 'x'):
                         new_x = d.x.clone()
                         # Phase 1.5: Log-Space Mapping for Thermodynamic Variables
-                        new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
-                        new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+                        for idx in [4, 5, 7, 8]:
+                            new_x[:, idx] = torch.log1p(torch.relu(new_x[:, idx]))
                         d.x = (new_x - global_mean) / global_std
                     processed_sequence.append(d)
 
@@ -420,10 +420,9 @@ def train_interpolation_test(config_path="config.yaml"):
                         truth_x_real = next_data_target.x[mask] * global_std + global_mean
                         
                         # Phase 1.5: Reverse Log-Space Mapping for Thermodynamic Variables
-                        pred_x_real[:, 2] = torch.expm1(pred_x_real[:, 2])
-                        pred_x_real[:, 3] = torch.expm1(pred_x_real[:, 3])
-                        truth_x_real[:, 2] = torch.expm1(truth_x_real[:, 2])
-                        truth_x_real[:, 3] = torch.expm1(truth_x_real[:, 3])
+                        for idx in [4, 5, 7, 8]:
+                            pred_x_real[:, idx] = torch.expm1(pred_x_real[:, idx])
+                            truth_x_real[:, idx] = torch.expm1(truth_x_real[:, idx])
                         
                         for ch_idx, var_name in enumerate(var_names):
                             p_val = pred_x_real[:, ch_idx]
