@@ -1,18 +1,19 @@
 # HyPhy-GLNN Configuration File
 
 data:
-  # data_dir: "data/test_data_for_ITER_SPI_fast"
-  data_dir: "data/test_data_for_BEST"
-  output_dir: "output/interpolation_test_BEST"
-  model_dir: "output/interpolation_test_BEST/checkpoints"
-  vis_dir: "output/interpolation_test_BEST/vis"
+  # Model 502 only. BEST is Model 600/8-field data and is intentionally excluded.
+  data_dir: "data/test_data_for_ITER_SPI_fast"
+  output_dir: "output/model502_baseline"
+  model_dir: "output/model502_baseline/checkpoints"
+  vis_dir: "output/model502_baseline/vis"
+  require_source: false  # true only when every frame follows the source contract
 
 pretrained:
   # Set to a valid path to load an existing model, or null to train from scratch
   # Example: "output/interpolation_test/checkpoints/encoder_epoch_3000.pth"
-  encoder: "output/interpolation_test_BEST/checkpoints_good_1750/model_epoch_500.pt"
-  processor: "output/interpolation_test_BEST/checkpoints_good_1750/model_epoch_500.pt"
-  decoder: "output/interpolation_test_BEST/checkpoints_good_1750/model_epoch_500.pt"
+  encoder: null
+  processor: null
+  decoder: null
 
 training:
   batch_size: 3
@@ -30,6 +31,14 @@ model:
   encoder_layers: 4
   processor_layers: 2
   decoder_layers: 4
+  source_dim: 3
+
+schema:
+  version: "model502-state-v1"
+  model_id: 502
+  state_fields: [psi, Phi, Z_j, omega, rho, T_i, v_par, rho_imp, T_e]
+  source_fields: [S_rho, S_T_i, S_T_e]
+  condition_fields: [eta, visco, ZK_perp, ZK_par]
 
 physics:
   lambda_data: 1.0

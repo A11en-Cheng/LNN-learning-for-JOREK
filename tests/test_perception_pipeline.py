@@ -16,8 +16,7 @@ def test_perception_pipeline():
     print(f"   Graph Data: {graph_data}")
     
     print("\n2. Initializing GNN Encoder (Perception)...")
-    # input_dim=5 严格对应 psi, Phi, rho, T, v_parallel
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=64, latent_dim=32, num_layers=3)
+    encoder = JorekGNNEncoder(input_dim=9, hidden_dim=64, latent_dim=32, num_layers=3)
     print(encoder)
     
     print("\n3. Forward Pass (Extracting Topological Features)...")

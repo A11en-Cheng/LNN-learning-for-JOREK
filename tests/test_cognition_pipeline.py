@@ -22,7 +22,7 @@ def test_cognition_pipeline():
     print(f"   Batched Graph Data: {batch_data}")
     
     print("\n2. Initializing GNN Encoder & LNN Processor...")
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=64, latent_dim=32, num_layers=3)
+    encoder = JorekGNNEncoder(input_dim=9, hidden_dim=64, latent_dim=32, num_layers=3)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64, num_layers=1)
     
     print("\n3. Forward Pass (Perception -> Cognition)...")

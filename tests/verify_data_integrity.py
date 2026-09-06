@@ -68,10 +68,10 @@ def verify_data_integrity():
             issues_found = True
 
     if not issues_found:
-        print("\n✅ All files passed integrity check. No NaNs, Infs, or read errors found.")
+        print("\nPASS: All files passed integrity check. No NaNs, Infs, or read errors found.")
         print("   Rank-1 tensor shapes (grids) appear consistent (or consistent change warnings not triggered).")
     else:
-        print("\n⚠️ Issues were found in the dataset. See above for details.")
+        print("\nWARNING: Issues were found in the dataset. See above for details.")
 
 if __name__ == "__main__":
     verify_data_integrity()

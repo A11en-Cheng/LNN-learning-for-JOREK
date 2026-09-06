@@ -207,15 +207,15 @@ marimo/_lsp/
 __marimo__/
 
 #data for trainning
-data/
-data/*
+# Only ignore the repository's dataset directory.  The old unanchored rule
+# also hid src/data/, including the parser and schema implementation.
+/data/
 *.png
 *.jpg
 *.jpeg
 
 #redundant 
-redundant/*
-redundant/
+/redundant/
 
 #output
 output/*

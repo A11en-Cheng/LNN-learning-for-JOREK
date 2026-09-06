@@ -7,13 +7,14 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from src.data.dataset import collate_temporal_graphs  # noqa: F401 (for type hints / consistency)
+from src.data.model502_schema import FIELD_INDEX, FIELD_NAMES, transform_state, validate_source_tensor
 from src.models.loss import JorekPhysicsLoss, compute_normalized_flux
 from src.physics.grad_ops import compute_gradient, compute_divergence
 from src.physics.mhd import get_magnetic_field
 from src.physics.cocos8 import reconstruct_velocity
 
 
-CHANNEL_NAMES = ["psi", "phi", "rho", "Te", "v_par"]
+CHANNEL_NAMES = list(FIELD_NAMES)
 
 
 class JorekEvaluator:
@@ -35,7 +36,7 @@ class JorekEvaluator:
                JorekGNNDecoder. The model is expected to operate in the
                *normalized* space and predict residuals Δx.
         config: Dict-like configuration. Recommended keys:
-            - 'stats': {'mean': Tensor[5], 'std': Tensor[5]} for Z-score.
+            - 'stats': {'mean': Tensor[9], 'std': Tensor[9]} for Z-score.
             - 'dt': float physical time step for PDE residuals (fallback=1.0).
             - 'seq_len': int maximum rollout length (optional).
             - 'warmup_steps': int LNN warmup steps using teacher forcing.
@@ -236,10 +237,7 @@ class JorekEvaluator:
             for data in batch_sequence[: max_len]:
                 d = data.to(self.device)
                 if hasattr(d, "x"):
-                    new_x = d.x.clone()
-                    # Log-space for rho & Te before global Z-score
-                    new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
-                    new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+                    new_x = transform_state(d.x)
 
                     if self.stats is None:
                         raise RuntimeError(
@@ -262,7 +260,7 @@ class JorekEvaluator:
             x0_phys = self.denormalize(x0_norm)
 
             # Global mass at t=0 (sum rho)
-            rho0 = x0_phys[:, 2:3]
+            rho0 = x0_phys[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
             if rho0.numel() > 0:
                 M0 = torch.sum(rho0 * mass_weights).item()
             else:
@@ -367,8 +365,8 @@ class JorekEvaluator:
                 # ------------------------------------------------------------------
                 # Global mass conservation: drift of sum(rho)
                 # ------------------------------------------------------------------
-                rho_pred = x_pred_phys[:, 2:3]
-                rho_gt = x_gt_phys[:, 2:3]
+                rho_pred = x_pred_phys[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
+                rho_gt = x_gt_phys[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
 
                 if rho_pred.numel() > 0:
                     M_pred = torch.sum(rho_pred * mass_weights).item()
@@ -590,14 +588,15 @@ class JorekEvaluator:
         curr_denorm = self.denormalize(curr_state_norm)
         next_denorm = self.denormalize(next_state_norm)
 
-        rho_curr = curr_denorm[:, 2:3]
-        v_par_curr = curr_denorm[:, 4:5]
+        rho_curr = curr_denorm[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
+        v_par_curr = curr_denorm[:, FIELD_INDEX["v_par"]:FIELD_INDEX["v_par"] + 1]
 
-        psi_next = next_denorm[:, 0:1]
-        Phi_next = next_denorm[:, 1:2]
-        rho_next = next_denorm[:, 2:3]
-        T_next = next_denorm[:, 3:4]
-        v_par_next = next_denorm[:, 4:5]
+        psi_next = next_denorm[:, FIELD_INDEX["psi"]:FIELD_INDEX["psi"] + 1]
+        Phi_next = next_denorm[:, FIELD_INDEX["Phi"]:FIELD_INDEX["Phi"] + 1]
+        rho_next = next_denorm[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
+        t_i_next = next_denorm[:, FIELD_INDEX["T_i"]:FIELD_INDEX["T_i"] + 1]
+        t_e_next = next_denorm[:, FIELD_INDEX["T_e"]:FIELD_INDEX["T_e"] + 1]
+        v_par_next = next_denorm[:, FIELD_INDEX["v_par"]:FIELD_INDEX["v_par"] + 1]
 
         R = graph_data.pos[:, 0:1]
 
@@ -617,7 +616,6 @@ class JorekEvaluator:
 
         # Spatial gradients in physical space
         grad_rho = compute_gradient(rho_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
-        grad_T = compute_gradient(T_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_v_par = compute_gradient(v_par_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_Phi = compute_gradient(Phi_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_psi = compute_gradient(psi_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
@@ -639,26 +637,30 @@ class JorekEvaluator:
         ).unsqueeze(-1)
         div_rho_v = div_cart_rho_v + rho_v_R / (R + 1e-8)
 
-        res_mass_raw = (rho_next - rho_curr) / dt + div_rho_v
+        source_rho = torch.zeros_like(rho_next)
+        if hasattr(graph_data, "source") and graph_data.source is not None:
+            validate_source_tensor(graph_data.source, name="benchmark source")
+            source_rho = graph_data.source[:, 0:1].to(device=device, dtype=rho_next.dtype)
+        res_mass_raw = (rho_next - rho_curr) / dt + div_rho_v - source_rho
         res_mass = (res_mass_raw * dt) / (torch.abs(rho_curr) + 1e-3)
 
         # Parallel momentum residual
         v_dot_grad_v_par = v_R * grad_v_par[:, 0:1] + v_Z * grad_v_par[:, 1:2]
-        rho_T = rho_next * T_next
-        grad_rho_T = compute_gradient(
-            rho_T, graph_data.edge_index, graph_data.edge_attr
+        pressure_next = rho_next * (t_i_next + t_e_next)
+        grad_pressure = compute_gradient(
+            pressure_next, graph_data.edge_index, graph_data.edge_attr
         ).squeeze(1)
 
         B_R = B_field[:, 0:1]
         B_Z = B_field[:, 1:2]
         B_mag = torch.norm(B_field, p=2, dim=-1, keepdim=True) + 1e-8
 
-        B_dot_grad_rho_T = B_R * grad_rho_T[:, 0:1] + B_Z * grad_rho_T[:, 1:2]
-        grad_par_rho_T = B_dot_grad_rho_T / B_mag
+        B_dot_grad_pressure = B_R * grad_pressure[:, 0:1] + B_Z * grad_pressure[:, 1:2]
+        grad_par_pressure = B_dot_grad_pressure / B_mag
 
         res_momentum_raw = rho_next * (
             (v_par_next - v_par_curr) / dt + v_dot_grad_v_par
-        ) + grad_par_rho_T
+        ) + grad_par_pressure
 
         v_ref = torch.abs(v_par_curr) + 0.1
         res_momentum = (res_momentum_raw * dt) / (

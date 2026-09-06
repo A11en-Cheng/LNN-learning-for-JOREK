@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.nn.utils import clip_grad_norm_
+from src.data.model502_schema import validate_source_tensor, validate_state_tensor
 
 class JorekTrainer:
     """
@@ -25,16 +26,21 @@ class JorekTrainer:
             weight_decay=1e-4 # L2 正则化，防止过拟合
         )
 
-    def train_step(self, batch_data, target_states, target_p_disrupt):
+    def train_step(self, batch_data, target_states, target_p_disrupt, dt=1.0, controls=None):
         """
         执行单步训练。
         Args:
             batch_data: 当前时间步的 PyG Batch 数据 (包含 x, edge_index, pos, batch 等)
-            target_states: 下一时间步的真实物理状态 [Total_nodes, 5]
+            target_states: 下一时间步的真实物理状态 [Total_nodes, 9]
             target_p_disrupt: 真实的破裂标签 [Batch_size, 1]
         Returns:
             total_loss, reg_loss, cls_loss
         """
+        validate_state_tensor(batch_data.x, name="trainer current state")
+        validate_state_tensor(target_states, name="trainer target state")
+        if controls is not None:
+            validate_source_tensor(controls, name="trainer controls")
+
         # 1. 设置为训练模式
         self.encoder.train()
         self.processor.train()
@@ -46,8 +52,9 @@ class JorekTrainer:
         # 3. 前向传播 (Perception -> Cognition -> Reconstruction)
         latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
         # Processor 现在返回 (output, hidden_state)
-        next_latent_features, _ = self.processor(latent_features, batch_data.batch)
-        pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
+        next_latent_features, _ = self.processor(latent_features, batch_data.batch, controls=controls)
+        pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
+        pred_states = batch_data.x + pred_delta
         
         # 4. 计算损失
         from src.models.loss import compute_spatial_weights
@@ -70,9 +77,9 @@ class JorekTrainer:
         # 7. 更新参数
         self.optimizer.step()
         
-        return total_loss.item(), loss_reg.item(), loss_cls.item()
+        return total_loss.item(), float(loss_reg), float(loss_cls)
 
-    def eval_step(self, batch_data, target_states, target_p_disrupt):
+    def eval_step(self, batch_data, target_states, target_p_disrupt, dt=1.0, controls=None):
         """
         执行单步评估。
         """
@@ -83,8 +90,11 @@ class JorekTrainer:
         with torch.no_grad():
             latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
             # Processor 现在返回 (output, hidden_state)
-            next_latent_features, _ = self.processor(latent_features, batch_data.batch)
-            pred_states, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
+            if controls is not None:
+                validate_source_tensor(controls, name="trainer controls")
+            next_latent_features, _ = self.processor(latent_features, batch_data.batch, controls=controls)
+            pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
+            pred_states = batch_data.x + pred_delta
             
             from src.models.loss import compute_spatial_weights
             spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)

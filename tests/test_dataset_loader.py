@@ -83,7 +83,7 @@ def test_jorek_sequence_loader():
     # 检查节点特征维度
     # x shape: [total_nodes_in_batch, num_features]
     print(f"Node Features Shape: {batch_t0.x.shape}")
-    assert batch_t0.x.shape[1] == 5, "Expected 5 input features (psi, Phi, rho, T, v_par)"
+    assert batch_t0.x.shape[1] == 9, "Expected Model 502's 9 canonical state fields"
     
     print("✅ JorekSequenceDataset Test Passed!")
 

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.utils import unbatch
+from src.data.model502_schema import NUM_SOURCE_FIELDS, validate_source_tensor
 
 class JorekLNNProcessor(nn.Module):
     """
@@ -13,6 +14,15 @@ class JorekLNNProcessor(nn.Module):
         
         self.latent_dim = latent_dim
         self.hidden_size = hidden_size
+        # Node-local, pre-standardised Model 502 source controls are injected
+        # immediately before continuous-time evolution.  ``None`` means a
+        # genuinely unforced trajectory; callers must not replace unavailable
+        # source data with zeros.
+        self.control_encoder = nn.Sequential(
+            nn.Linear(NUM_SOURCE_FIELDS, latent_dim),
+            nn.SiLU(),
+            nn.Linear(latent_dim, latent_dim),
+        )
         
         # 尝试导入 ncps (Liquid Neural Networks 库)
         try:
@@ -38,7 +48,7 @@ class JorekLNNProcessor(nn.Module):
             )
             self.use_cfc = False
 
-    def forward(self, latent_x, batch_index=None, state=None, time_steps=None):
+    def forward(self, latent_x, batch_index=None, state=None, time_steps=None, controls=None):
         """
         Args:
             latent_x: GNN 编码器输出的潜在特征 [Total_nodes, latent_dim]
@@ -47,10 +57,21 @@ class JorekLNNProcessor(nn.Module):
             time_steps: 时间步长信息 (可选)。
                         推荐传入一个标量 Δt（物理时间间隔），
                         LNN 将在当前时间步对所有节点使用相同的 Δt 进行连续时间积分。
+            controls: 可选的、已归一化 Model 502 源项 ``[Total_nodes, 3]``，
+                      顺序为 ``[S_rho, S_T_i, S_T_e]``。
         Returns:
             next_latent_output: LNN 的输出特征 [Total_nodes, latent_dim]
             next_state: 更新后的隐藏状态
         """
+        if controls is not None:
+            validate_source_tensor(controls, name="processor controls")
+            if controls.shape[0] != latent_x.shape[0]:
+                raise ValueError(
+                    "processor controls and latent_x must have the same number of nodes: "
+                    f"{controls.shape[0]} != {latent_x.shape[0]}"
+                )
+            latent_x = latent_x + self.control_encoder(controls.to(latent_x.dtype))
+
         # 1. CRITICAL TENSOR SHAPE RULE: Graph-to-Sequence 转换
         # PyG 将多个图拼接为 [Total_nodes, Feat]。
         # LNN 期望的输入是 [Batch_size, Seq_len, Feat]。

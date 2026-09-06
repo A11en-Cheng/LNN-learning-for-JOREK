@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import GATConv, LayerNorm
+from src.data.model502_schema import NUM_STATE_FIELDS, validate_state_tensor
 
 class JorekGNNEncoder(nn.Module):
     """
@@ -10,8 +11,13 @@ class JorekGNNEncoder(nn.Module):
     使用 GATConv 并结合 edge_attr (Delta R, Delta Z) 来打破纯拓扑的对称性，
     从而更好地拟合台基区 (Pedestal) 的陡峭梯度和磁轴的剧烈变化。
     """
-    def __init__(self, input_dim=5, hidden_dim=64, latent_dim=32, num_layers=3, edge_dim=2):
+    def __init__(self, input_dim=NUM_STATE_FIELDS, hidden_dim=64, latent_dim=32, num_layers=3, edge_dim=2):
         super(JorekGNNEncoder, self).__init__()
+        if input_dim != NUM_STATE_FIELDS:
+            raise ValueError(
+                f"Model 502 encoder requires input_dim={NUM_STATE_FIELDS}, got {input_dim}. "
+                "Use an explicit legacy adapter for five-field checkpoints."
+            )
         
         self.num_layers = num_layers
         self.convs = nn.ModuleList()
@@ -38,14 +44,13 @@ class JorekGNNEncoder(nn.Module):
     def forward(self, x, edge_index, pos):
         """
         Args:
-            x: 节点特征矩阵 [Total_nodes, 5] (psi, Phi, rho, T, v_parallel)
+            x: 节点特征矩阵 [Total_nodes, 9] in Model 502 canonical order
             edge_index: 图连接矩阵 [2, Num_edges]
             pos: 节点坐标矩阵 [Total_nodes, 2] (R, Z)
         Returns:
             latent_x: 潜在节点特征 [Total_nodes, latent_dim]
         """
-        # 防御性编程：严格验证输入特征维度是否符合 Reduced MHD Ansatz (5个变量)
-        assert x.shape[1] == 5, f"Expected 5 input features (Reduced MHD), got {x.shape[1]}"
+        validate_state_tensor(x, name="encoder input")
         
         # 计算几何特征 (Delta R, Delta Z) 作为 edge_attr
         row, col = edge_index

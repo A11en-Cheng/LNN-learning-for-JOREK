@@ -35,9 +35,9 @@ def test_training_and_visualization():
     target_p_disrupt = torch.tensor([[0.0]], dtype=torch.float32)
     
     print("\n2. Initializing Models, Loss, and Trainer...")
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=64, latent_dim=32, num_layers=3)
+    encoder = JorekGNNEncoder(input_dim=9, hidden_dim=64, latent_dim=32, num_layers=3)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64, num_layers=1)
-    decoder = JorekGNNDecoder(latent_dim=32, hidden_dim=64, output_dim=5, num_layers=2)
+    decoder = JorekGNNDecoder(latent_dim=32, hidden_dim=64, output_dim=9, num_layers=2)
     physics_layer = ReducedMHDConstraints()
     
     criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.1)

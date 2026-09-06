@@ -12,13 +12,13 @@ from src.data.dataset import JorekSequenceDataset, collate_temporal_graphs
 from src.models.gnn_encoder import JorekGNNEncoder
 from src.models.lnn_processor import JorekLNNProcessor
 from src.models.gnn_decoder import JorekGNNDecoder
+from src.data.model502_schema import FIELD_INDEX, FIELD_NAMES, inverse_transform_state, transform_state
 
 def verify_reliability():
     # ================= 配置参数 =================
-    # DATA_DIR = "data/test_data_for_ITER_SPI_fast"
-    DATA_DIR = "data/test_data_for_BEST"
-    OUTPUT_DIR = "output/verification_BEST"
-    CHECKPOINT_PATH = "output/interpolation_test_BEST/checkpoints/latest_model.pt" # 权重路径
+    DATA_DIR = "data/test_data_for_ITER_SPI_fast"
+    OUTPUT_DIR = "output/verification_model502"
+    CHECKPOINT_PATH = "output/model502_baseline/checkpoints/latest_model.pt"
     
     WARMUP_STEPS = 6
     ROLLOUT_STEPS = 40
@@ -45,11 +45,9 @@ def verify_reliability():
     test_seq = dataset[0] 
     
     print("Computing Global Normalization Statistics...")
-    # 为了准确，我们使用整个序列计算均值和方差
-    # Phase 1.5: 在归一化前对 rho / Te 做 log1p(ReLU(.))，与训练脚本保持一致
-    all_x = torch.cat([data.x for data in test_seq], dim=0).clone()
-    all_x[:, 2] = torch.log1p(torch.relu(all_x[:, 2]))
-    all_x[:, 3] = torch.log1p(torch.relu(all_x[:, 3]))
+    # Diagnostic-only statistics. Production checkpoint statistics must come
+    # from the training split manifest.
+    all_x = transform_state(torch.cat([data.x for data in test_seq], dim=0))
     global_mean = all_x.mean(dim=0)
     global_std = all_x.std(dim=0) + 1e-6
 
@@ -60,9 +58,9 @@ def verify_reliability():
     global_mean = global_mean.to(device)
     global_std = global_std.to(device)
     
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=4).to(device)
+    encoder = JorekGNNEncoder(input_dim=9, hidden_dim=HIDDEN_DIM, latent_dim=LATENT_DIM, num_layers=4).to(device)
     processor = JorekLNNProcessor(latent_dim=LATENT_DIM, hidden_size=HIDDEN_DIM, num_layers=2).to(device)
-    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=5, num_layers=4).to(device)
+    decoder = JorekGNNDecoder(latent_dim=LATENT_DIM, hidden_dim=HIDDEN_DIM, output_dim=9, num_layers=4).to(device)
     
     if os.path.exists(CHECKPOINT_PATH):
         print(f"Loading weights from {CHECKPOINT_PATH}...")
@@ -94,10 +92,8 @@ def verify_reliability():
         for t in range(WARMUP_STEPS):
             gt_data = test_seq[t].to(device)
 
-            # 与训练脚本一致的预处理：log-space + 全局 Z-score
-            new_x = gt_data.x.clone()
-            new_x[:, 2] = torch.log1p(torch.relu(new_x[:, 2]))
-            new_x[:, 3] = torch.log1p(torch.relu(new_x[:, 3]))
+            # Same canonical transform used by Model 502 training.
+            new_x = transform_state(gt_data.x)
             norm_x = (new_x - global_mean) / global_std
             
             latent = encoder(norm_x, gt_data.edge_index, gt_data.pos)
@@ -122,16 +118,10 @@ def verify_reliability():
         for t in range(WARMUP_STEPS, SEQ_LEN):
             gt_data = test_seq[t].to(device)
             
-            # 反归一化记录：先撤销 Z-score，再撤销 log-space（只对 rho / Te）
-            pred_real = current_pred_norm * global_std + global_mean
+            # Reverse Z-score and canonical log-space transform.
+            pred_real = inverse_transform_state(current_pred_norm * global_std + global_mean)
             gt_raw = gt_data.x.clone()
 
-            # Reverse log-space for rho / Te
-            pred_real[:, 2] = torch.expm1(pred_real[:, 2])
-            pred_real[:, 3] = torch.expm1(pred_real[:, 3])
-
-            # gt_raw 本身就是物理空间，无需 log 反变换
-            pred_real = pred_real
             gt_real = gt_raw
             
             predictions_real.append(pred_real.cpu())
@@ -155,9 +145,7 @@ def verify_reliability():
                 current_pred_norm = current_pred_norm + pred_delta_norm
 
     # 计算误差累积 (Error Accumulation)
-    error_accumulation = {
-        "Psi": [], "Phi": [], "Rho": [], "Te": [], "v_par": []
-    }
+    error_accumulation = {name: [] for name in FIELD_NAMES}
     var_keys = list(error_accumulation.keys())
     
     for p, gt in zip(predictions_real, ground_truths_real):

@@ -24,9 +24,9 @@ def test_reconstruction_pipeline():
     print(f"   Batched Graph Data: {batch_data}")
     
     print("\n2. Initializing Full Pipeline (Encoder -> LNN -> Decoder -> Physics)...")
-    encoder = JorekGNNEncoder(input_dim=5, hidden_dim=64, latent_dim=32, num_layers=3)
+    encoder = JorekGNNEncoder(input_dim=9, hidden_dim=64, latent_dim=32, num_layers=3)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64, num_layers=1)
-    decoder = JorekGNNDecoder(latent_dim=32, hidden_dim=64, output_dim=5, num_layers=2)
+    decoder = JorekGNNDecoder(latent_dim=32, hidden_dim=64, output_dim=9, num_layers=2)
     physics_layer = ReducedMHDConstraints()
     
     print("\n3. Forward Pass (Full Pipeline)...")
@@ -37,9 +37,9 @@ def test_reconstruction_pipeline():
     next_latent_features, _ = processor(latent_features, batch_data.batch)
     
     # 3.3 Reconstruction (GNN Decoder)
-    # 预测 5 个核心变量和破裂概率
+    # 预测 Model 502 的 9 场残差和破裂概率
     pred_state_vars, p_disrupt = decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
-    print(f"   Predicted State Vars shape: {pred_state_vars.shape} [Total_nodes, 5]")
+    print(f"   Predicted State Vars shape: {pred_state_vars.shape} [Total_nodes, 9]")
     print(f"   Predicted P_disruption shape: {p_disrupt.shape} [Batch_size, 1]")
     
     # 3.4 Physics Constraints (Reduced MHD Ansatz)
@@ -52,7 +52,7 @@ def test_reconstruction_pipeline():
     print(f"   Computed v Field shape: {v_vec.shape} [Total_nodes, 3]")
     
     # 验证输出
-    assert pred_state_vars.shape[1] == 5, "State vars must have 5 dimensions!"
+    assert pred_state_vars.shape[1] == 9, "State vars must have 9 dimensions!"
     assert p_disrupt.shape[0] == 2, "P_disruption must have Batch_size dimensions!"
     assert B_vec.shape[1] == 3 and v_vec.shape[1] == 3, "B and v must be 3D vectors!"
     

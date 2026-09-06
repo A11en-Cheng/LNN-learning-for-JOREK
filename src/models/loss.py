@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.data.model502_schema import FIELD_INDEX, validate_source_tensor, validate_state_tensor
 from src.physics.grad_ops import compute_gradient, compute_divergence
 from src.physics.mhd import get_magnetic_field
 from src.physics.cocos8 import reconstruct_velocity
@@ -137,9 +138,9 @@ class JorekLoss(nn.Module):
         # 保持 reduction='none' 以便后续应用节点权重和分离通道
         self.reg_loss = nn.HuberLoss(delta=delta, reduction='none')
         
-        # 通道权重映射: [Psi, Phi, Rho, Te, v_par]
+        # Canonical Model 502 channel weights.
         if channel_weights is None:
-            cw = torch.tensor([1.0, 1.0, 1.0, 1.0, 1.0], dtype=torch.float32)
+            cw = torch.ones(len(FIELD_INDEX), dtype=torch.float32)
         else:
             cw = torch.as_tensor(channel_weights, dtype=torch.float32)
 
@@ -147,7 +148,7 @@ class JorekLoss(nn.Module):
         self.register_buffer("channel_weights", cw)
             
         # 变量名称，用于诊断输出
-        self.var_names = ["loss_psi", "loss_phi", "loss_rho", "loss_Te", "loss_vpar"]
+        self.var_names = [f"loss_{name}" for name in FIELD_INDEX]
         
         # 2. 分类损失 (Classification Loss)
         # 警告: Decoder 的 disruption_head 输出不需要加 Sigmoid！直接输出 logits。
@@ -166,8 +167,8 @@ class JorekLoss(nn.Module):
     ):
         """
         Args:
-            pred_states: 预测的物理状态 [Total_nodes, 5]
-            target_states: 真实的物理状态 [Total_nodes, 5]
+            pred_states: 预测的物理状态 [Total_nodes, 9]
+            target_states: 真实的物理状态 [Total_nodes, 9]
             pred_logits_disrupt: 预测的破裂概率 (未经过 Sigmoid) [Batch_size, 1]
             target_p_disrupt: 真实的破裂标签 (0 或 1) [Batch_size, 1]
             node_weights: (可选) 节点的空间重要性权重 [Total_nodes, 1]
@@ -176,6 +177,8 @@ class JorekLoss(nn.Module):
             pde_residuals: (可选) 物理残差张量 [Total_nodes, ...]
         """
         device = pred_states.device
+        validate_state_tensor(pred_states, name="JorekLoss prediction")
+        validate_state_tensor(target_states, name="JorekLoss target")
         weights = self.channel_weights.to(device)
         boundary_tensor = None
         if batch_boundary is not None:
@@ -195,7 +198,7 @@ class JorekLoss(nn.Module):
             freeboundary_flag = bool(freeboundary)
         
         # --- 1. 计算回归损失 ---
-        # raw_loss shape: [Total_nodes, 5]
+        # raw_loss shape: [Total_nodes, 9]
         raw_loss = self.reg_loss(pred_states, target_states) 
         
         # 应用空间节点权重 (如果提供，例如针对 X 点或 Core 区域加权)
@@ -212,9 +215,9 @@ class JorekLoss(nn.Module):
         loss_reg = weighted_loss.mean()
         
         # 【关键改进】：提取各个通道的独立 Loss 用于诊断监控
-        channel_losses = raw_loss.mean(dim=0) # Shape: [5]
+        channel_losses = raw_loss.mean(dim=0)
         diagnostics = {
-            self.var_names[i]: channel_losses[i].item() for i in range(5)
+            self.var_names[i]: channel_losses[i].item() for i in range(len(self.var_names))
         }
         
         # --- 2. 计算分类损失 ---
@@ -348,6 +351,7 @@ class JorekPhysicsLoss(nn.Module):
         1. 先做 Z-score 反变换: x_linear = x * std + mean
         2. 再对 rho/T_i/rho_n/T_e 反 log1p: expm1，并做轻微 clamp，避免在 PDE 残差计算中除零。
         """
+        validate_state_tensor(x, name="physics-loss state")
         if self.stats is None:
             return x
 
@@ -436,15 +440,17 @@ class JorekPhysicsLoss(nn.Module):
         curr_denorm = self.denormalize(curr_state)
         next_denorm = self.denormalize(pred)
 
-        # 变量切片（0: psi, 1: Phi, 2: rho, 3: T, 4: v_par）
-        rho_curr = curr_denorm[:, 2:3]
-        v_par_curr = curr_denorm[:, 4:5]
+        # Canonical Model 502 slices.  This remains a reduced diagnostic
+        # residual, not a claim that all nine PDEs are implemented.
+        rho_curr = curr_denorm[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
+        v_par_curr = curr_denorm[:, FIELD_INDEX["v_par"]:FIELD_INDEX["v_par"] + 1]
 
-        psi_next = next_denorm[:, 0:1]
-        Phi_next = next_denorm[:, 1:2]
-        rho_next = next_denorm[:, 2:3]
-        T_next = next_denorm[:, 3:4]
-        v_par_next = next_denorm[:, 4:5]
+        psi_next = next_denorm[:, FIELD_INDEX["psi"]:FIELD_INDEX["psi"] + 1]
+        Phi_next = next_denorm[:, FIELD_INDEX["Phi"]:FIELD_INDEX["Phi"] + 1]
+        rho_next = next_denorm[:, FIELD_INDEX["rho"]:FIELD_INDEX["rho"] + 1]
+        t_i_next = next_denorm[:, FIELD_INDEX["T_i"]:FIELD_INDEX["T_i"] + 1]
+        t_e_next = next_denorm[:, FIELD_INDEX["T_e"]:FIELD_INDEX["T_e"] + 1]
+        v_par_next = next_denorm[:, FIELD_INDEX["v_par"]:FIELD_INDEX["v_par"] + 1]
 
         R = graph_data.pos[:, 0:1]
 
@@ -464,7 +470,6 @@ class JorekPhysicsLoss(nn.Module):
 
         # 梯度算子（在物理空间上）
         grad_rho = compute_gradient(rho_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
-        grad_T = compute_gradient(T_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_v_par = compute_gradient(v_par_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_Phi = compute_gradient(Phi_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         grad_psi = compute_gradient(psi_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
@@ -485,24 +490,31 @@ class JorekPhysicsLoss(nn.Module):
         div_rho_v = div_cart_rho_v + rho_v_R / (R + 1e-8)
 
         # --- Mass Continuity Residual (Dimensionless Relative Error) ---
-        res_mass_raw = (rho_next - rho_curr) / self.dt + div_rho_v
+        source_rho = torch.zeros_like(rho_next)
+        if hasattr(graph_data, "source") and graph_data.source is not None:
+            validate_source_tensor(graph_data.source, name="physics-loss source")
+            source_rho = graph_data.source[:, 0:1].to(device=device, dtype=rho_next.dtype)
+        res_mass_raw = (rho_next - rho_curr) / self.dt + div_rho_v - source_rho
         
         # 乘以 dt 抵消时间量纲，除以 rho 抵消密度量纲。结果为纯小数 (Δρ/ρ)
         res_mass = (res_mass_raw * self.dt) / (torch.abs(rho_curr) + 1e-3)
         
         # --- Parallel Momentum Residual (Dimensionless Relative Error) ---
         v_dot_grad_v_par = v_R * grad_v_par[:, 0:1] + v_Z * grad_v_par[:, 1:2]
-        rho_T = rho_next * T_next
-        grad_rho_T = compute_gradient(rho_T, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
+        # The full Model 502 pressure also depends on impurity charge-state
+        # coefficients.  Those metadata are not yet part of the HDF5 contract,
+        # so this is explicitly the background two-temperature approximation.
+        pressure_next = rho_next * (t_i_next + t_e_next)
+        grad_pressure = compute_gradient(pressure_next, graph_data.edge_index, graph_data.edge_attr).squeeze(1)
         
         B_R = B_field[:, 0:1]
         B_Z = B_field[:, 1:2]
         B_mag = torch.norm(B_field, p=2, dim=-1, keepdim=True) + 1e-8
         
-        B_dot_grad_rho_T = B_R * grad_rho_T[:, 0:1] + B_Z * grad_rho_T[:, 1:2]
-        grad_par_rho_T = B_dot_grad_rho_T / B_mag
+        B_dot_grad_pressure = B_R * grad_pressure[:, 0:1] + B_Z * grad_pressure[:, 1:2]
+        grad_par_pressure = B_dot_grad_pressure / B_mag
         
-        res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_rho_T
+        res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_pressure
         
         # 构造参考速度：真实速度的绝对值 + 0.1 的保护底噪 (防止过零爆炸)
         v_ref = torch.abs(v_par_curr) + 0.1

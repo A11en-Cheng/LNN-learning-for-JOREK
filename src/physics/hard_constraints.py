@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch_geometric.nn import MessagePassing
 
 class GraphSpatialGradient(MessagePassing):
-    """
+    r"""
     在非结构化网格上计算空间梯度的可微算子。
     使用基于距离加权的最小二乘近似 (对角化简化版) 来计算 \nabla f = (\partial f / \partial R, \partial f / \partial Z)。
     """
@@ -50,7 +50,7 @@ class ReducedMHDConstraints(nn.Module):
     """
     物理约束层 (Hard Constraints):
     严格遵守 JOREK Reduced MHD Ansatz。
-    接收网络预测的 5 个核心变量，通过可微的图空间梯度计算真实的磁场 B 和速度场 v。
+    接收 Model 502 的 9 个状态变量，通过可微的图空间梯度计算真实的磁场 B 和速度场 v。
     """
     def __init__(self):
         super().__init__()
@@ -59,7 +59,7 @@ class ReducedMHDConstraints(nn.Module):
     def forward(self, state_vars, pos, edge_index, F0):
         """
         Args:
-            state_vars: 预测的状态变量 [Num_nodes, 5] (psi, Phi, rho, T, v_parallel)
+            state_vars: 预测的状态变量 [Num_nodes, 9]，使用 psi/Phi/v_parallel
             pos: 节点坐标 (R, Z) [Num_nodes, 2]
             edge_index: 图连接矩阵 [2, Num_edges]
             F0: 真空环向磁场常数 (R0 * B0)
@@ -70,7 +70,7 @@ class ReducedMHDConstraints(nn.Module):
         # 1. 提取核心变量
         psi = state_vars[:, 0:1]
         Phi = state_vars[:, 1:2]
-        v_par = state_vars[:, 4:5]
+        v_par = state_vars[:, 6:7]
         
         R = pos[:, 0:1] # 大半径 R
         
