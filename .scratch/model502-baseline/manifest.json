@@ -1,0 +1,180 @@
+{
+  "dataset_id": "d82e4f80099375218a008be21b110c2c524854c52a73d82dbd6208f975193862",
+  "runs": [
+    {
+      "first_index": 2750,
+      "last_index": 9300,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 132,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d21_ang12_massloss_neon",
+      "nodes": 4125,
+      "split": "train"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 8250,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 111,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d21_ang12_massloss_neon_v200",
+      "nodes": 4125,
+      "split": "test"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 8800,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 122,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d21_ang12_massloss_neon_v300",
+      "nodes": 4125,
+      "split": "train"
+    },
+    {
+      "first_index": 2710,
+      "last_index": 8900,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 620,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d22_ang12_massloss_neon",
+      "nodes": 4125,
+      "split": "train"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 8950,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 125,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d22_ang12_massloss_neon_v200",
+      "nodes": 4125,
+      "split": "train"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 8950,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 125,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d22_ang12_massloss_neon_v300",
+      "nodes": 4125,
+      "split": "test"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 9450,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 135,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d22_ang15_5_massloss_neon_v300",
+      "nodes": 4125,
+      "split": "train"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 6500,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 76,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_1d22_ang15_5_massloss_neon_v400",
+      "nodes": 4125,
+      "split": "val"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 8500,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 116,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_2d21_ang12_massloss_neon_v300",
+      "nodes": 4125,
+      "split": "val"
+    },
+    {
+      "first_index": 2750,
+      "last_index": 7250,
+      "model_id": 502,
+      "n_dim": 2,
+      "n_frames": 91,
+      "n_tor": 1,
+      "n_var": 9,
+      "name": "scan_2d21_ang15_5_massloss_neon_v300",
+      "nodes": 4125,
+      "split": "train"
+    }
+  ],
+  "schema": "model502-state-v1",
+  "seed": 0,
+  "stats": {
+    "fields": {
+      "Phi": {
+        "mean": 2.463673467395399e-05,
+        "n_negative": 0,
+        "std": 0.00020490426398705677
+      },
+      "T_e": {
+        "mean": 0.026952123907979696,
+        "n_negative": 5886,
+        "std": 0.06374064342635252
+      },
+      "T_i": {
+        "mean": 0.03394372356524639,
+        "n_negative": 2343,
+        "std": 0.06728192871108635
+      },
+      "Z_j": {
+        "mean": 0.16135433017495612,
+        "n_negative": 0,
+        "std": 0.1849417121366784
+      },
+      "omega": {
+        "mean": -5.581267720780922e-05,
+        "n_negative": 0,
+        "std": 0.005688875389969839
+      },
+      "psi": {
+        "mean": -1.6375290271734395,
+        "n_negative": 0,
+        "std": 2.2061720119607804
+      },
+      "rho": {
+        "mean": 1.4261449065208025,
+        "n_negative": 1687,
+        "std": 1.230913228923756
+      },
+      "rho_imp": {
+        "mean": 1.2670500423258515,
+        "n_negative": 81498,
+        "std": 1.3054300116892281
+      },
+      "v_par": {
+        "mean": -0.0006479245619868872,
+        "n_negative": 0,
+        "std": 0.004044185885477472
+      }
+    },
+    "n_samples": 5053125,
+    "schema": "model502-state-v1"
+  },
+  "test_frac": 0.15,
+  "val_frac": 0.15
+}
