@@ -2,7 +2,7 @@
 
 data:
   # Model 502 only. BEST is Model 600/8-field data and is intentionally excluded.
-  data_dir: "data/test_data_for_ITER_SPI_fast"
+  data_dir: "data/EHL-2/scan_1d22_ang12_massloss_neon"
   output_dir: "output/model502_baseline"
   model_dir: "output/model502_baseline/checkpoints"
   vis_dir: "output/model502_baseline/vis"

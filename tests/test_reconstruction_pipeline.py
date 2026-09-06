@@ -1,6 +1,7 @@
 import sys
 import os
 import torch
+import pytest
 from torch_geometric.data import Batch
 
 # 确保可以导入 src 模块
@@ -13,9 +14,11 @@ from src.models.gnn_decoder import JorekGNNDecoder
 from src.physics.hard_constraints import ReducedMHDConstraints
 
 def test_reconstruction_pipeline():
+    if not os.path.isdir("data/EHL-2/scan_1d22_ang12_massloss_neon"):
+        pytest.skip("real EHL-2 data not present")
     print("==================================================")
     print("1. Loading HDF5 Data (Simulating a Batch)...")
-    parser = JorekDataParser("data/test_data_for_pipeline_EHL-2/jorek000000.h5")
+    parser = JorekDataParser("data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5")
     graph_data_1 = parser.parse_to_graph()
     graph_data_2 = parser.parse_to_graph() # 模拟第二个时间步或样本
     

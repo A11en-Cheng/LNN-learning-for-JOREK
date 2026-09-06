@@ -1,8 +1,13 @@
 {
   "dataset_id": "d82e4f80099375218a008be21b110c2c524854c52a73d82dbd6208f975193862",
+  "mesh": {
+    "consistent": true,
+    "n_grids": 1
+  },
   "runs": [
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 9300,
       "model_id": 502,
       "n_dim": 2,
@@ -15,6 +20,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 8250,
       "model_id": 502,
       "n_dim": 2,
@@ -27,6 +33,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 8800,
       "model_id": 502,
       "n_dim": 2,
@@ -39,6 +46,7 @@
     },
     {
       "first_index": 2710,
+      "grid_id": 0,
       "last_index": 8900,
       "model_id": 502,
       "n_dim": 2,
@@ -51,6 +59,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 8950,
       "model_id": 502,
       "n_dim": 2,
@@ -63,6 +72,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 8950,
       "model_id": 502,
       "n_dim": 2,
@@ -75,6 +85,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 9450,
       "model_id": 502,
       "n_dim": 2,
@@ -87,6 +98,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 6500,
       "model_id": 502,
       "n_dim": 2,
@@ -99,6 +111,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 8500,
       "model_id": 502,
       "n_dim": 2,
@@ -111,6 +124,7 @@
     },
     {
       "first_index": 2750,
+      "grid_id": 0,
       "last_index": 7250,
       "model_id": 502,
       "n_dim": 2,

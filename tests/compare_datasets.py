@@ -73,7 +73,7 @@ def compare_datasets(file1, file2):
     print(sorted(list(keys2 - keys1)))
 
 if __name__ == "__main__":
-    file1 = r"data\test_data_for_pipeline_EHL-2\jorek000000.h5"
-    file2 = r"data\test_data_for_ITER_SPI_fast\jorek00000.h5"
+    file1 = "data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5"
+    file2 = "data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002720.h5"
     
     compare_datasets(file1, file2)

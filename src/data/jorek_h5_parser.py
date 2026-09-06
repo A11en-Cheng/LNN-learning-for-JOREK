@@ -346,6 +346,16 @@ class JorekDataParser:
                 # 提取所有变量的节点值 (索引 0)，形状变为 (n_var, n_nodes)
                 values_data = f['values']
                 if len(values_data.shape) == 4:
+                    # JOREK writes (n_var, 4 Bezier DoFs, harmonics, nodes).
+                    # Phase 1 trains on 2D (ntor=1) runs only: the harmonic
+                    # axis must be length one.  Multi-harmonic (ntor11) frames
+                    # are excluded by ADR-0004 and must not be silently sliced.
+                    if values_data.shape[2] != 1:
+                        raise ValueError(
+                            f"2D-only contract: 'values' harmonic dimension must be 1, "
+                            f"got {values_data.shape[2]}. ntor11/multi-harmonic frames are "
+                            "excluded by ADR-0004."
+                        )
                     values_raw = values_data[:, 0, 0, :]
                 elif len(values_data.shape) == 3:
                     # 假设形状为 (n_var, 4, n_nodes)
@@ -460,7 +470,7 @@ class JorekDataParser:
 
 if __name__ == "__main__":
     # 测试代码
-    parser = JorekDataParser("data/test_data_for_pipeline_EHL-2/jorek000000.h5")
+    parser = JorekDataParser("data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5")
     graph = parser.parse_to_graph()
     print(graph)
     pass

@@ -9,15 +9,19 @@ import glob
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.jorek_h5_parser import JorekDataParser
+from src.data.data_manifest import aligned_frames, discover_runs, is_2d_run
 
 def verify_data_integrity():
-    DATA_DIR = r"d:\Proj\lnn_jorek\LNN-learning-for-JOREK\data\test_data_for_pipeline_EHL-2"
-    file_pattern = "jorek*.h5"
-    search_path = os.path.join(DATA_DIR, file_pattern)
-    files = sorted(glob.glob(search_path))
+    DATA_DIR = "data/EHL-2"
+    # Only 2D (ntor=1) marker-aligned training frames are in scope (ADR-0004).
+    files = []
+    for run in discover_runs(DATA_DIR):
+        if is_2d_run(run.path):
+            files.extend(frame.state_path for frame in aligned_frames(run.path))
+    files = sorted(files, key=lambda path: str(path))
     
     if not files:
-        print(f"No files found in {search_path}")
+        print(f"No aligned 2D frames found under {DATA_DIR}")
         return
 
     print(f"Found {len(files)} files. Starting integrity check...")

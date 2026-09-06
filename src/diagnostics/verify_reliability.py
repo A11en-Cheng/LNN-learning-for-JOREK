@@ -16,7 +16,7 @@ from src.data.model502_schema import FIELD_INDEX, FIELD_NAMES, inverse_transform
 
 def verify_reliability():
     # ================= 配置参数 =================
-    DATA_DIR = "data/test_data_for_ITER_SPI_fast"
+    DATA_DIR = "data/EHL-2/scan_1d22_ang12_massloss_neon"
     OUTPUT_DIR = "output/verification_model502"
     CHECKPOINT_PATH = "output/model502_baseline/checkpoints/latest_model.pt"
     

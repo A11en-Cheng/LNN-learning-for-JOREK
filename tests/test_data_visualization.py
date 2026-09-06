@@ -65,7 +65,7 @@ def visualize_h5_snapshot(h5_filepath, output_dir="output/visualizations"):
 
 if __name__ == "__main__":
     # 测试可视化 jorek000010.h5
-    test_file = "data/test_data_for_ITER_SPI_fast/jorek00000.h5"
+    test_file = "data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5"
     if os.path.exists(test_file):
         visualize_h5_snapshot(test_file)
     else:

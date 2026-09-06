@@ -1,12 +1,12 @@
 import os
 import glob
-import re
 import h5py
 import torch
 import numpy as np
 from torch_geometric.data import Dataset
 from typing import List, Optional, Callable
 from .jorek_h5_parser import JorekDataParser
+from .data_manifest import MARKER_FRAME_RE, STATE_FRAME_RE
 
 class JorekSequenceDataset(Dataset):
     """
@@ -28,7 +28,8 @@ class JorekSequenceDataset(Dataset):
                  pre_transform: Optional[Callable] = None,
                  file_pattern: str = "jorek*.h5",
                  freeboundary: bool = True,
-                 require_source: bool = False):
+                 require_source: bool = False,
+                 aligned_only: bool = True):
         """
         :param root_dir: 包含 .h5 文件的根目录
         :param seq_len: 每个样本的时间序列长度
@@ -39,6 +40,7 @@ class JorekSequenceDataset(Dataset):
         self.root_dir = root_dir
         self.seq_len = seq_len
         self.file_pattern = file_pattern
+        self.aligned_only = bool(aligned_only)
         self.sorted_files = self._scan_and_sort_files()
         self.freeboundary = bool(freeboundary)
         self.require_source = bool(require_source)
@@ -63,16 +65,32 @@ class JorekSequenceDataset(Dataset):
         return [] 
 
     def _scan_and_sort_files(self) -> List[str]:
-        """扫描并按数字顺序排序文件"""
+        """Scan strictly named state frames, sorted by their numeric index.
+
+        Special names (``jorek_restart.h5``, ``jorek_grid.h5``, ...) are never
+        frames.  With ``aligned_only`` (the default) a frame is kept only when a
+        matching ``part<index>.h5`` marker file exists in the same directory,
+        which is the valid-range contract of ADR-0004.
+        """
         search_path = os.path.join(self.root_dir, self.file_pattern)
-        files = glob.glob(search_path)
-        
-        # 提取文件名中的数字进行排序 (例如 jorek000100.h5 -> 100)
-        def extract_number(filepath):
-            match = re.search(r'(\d+)', os.path.basename(filepath))
-            return int(match.group(1)) if match else 0
-            
-        return sorted(files, key=extract_number)
+        files = [
+            path
+            for path in glob.glob(search_path)
+            if STATE_FRAME_RE.fullmatch(os.path.basename(path)) is not None
+        ]
+
+        def frame_index(filepath: str) -> int:
+            return int(STATE_FRAME_RE.fullmatch(os.path.basename(filepath)).group("index"))
+
+        files.sort(key=frame_index)
+        if self.aligned_only:
+            marker_indices = {
+                int(MARKER_FRAME_RE.fullmatch(os.path.basename(path)).group("index"))
+                for path in glob.glob(os.path.join(self.root_dir, "part*.h5"))
+                if MARKER_FRAME_RE.fullmatch(os.path.basename(path)) is not None
+            }
+            files = [path for path in files if frame_index(path) in marker_indices]
+        return files
 
     def len(self):
         # 样本数量 = 总文件数 - 序列长度 + 1

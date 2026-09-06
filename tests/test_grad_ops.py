@@ -15,7 +15,7 @@ def test_grad_ops():
     print("🚀 Starting Gradient Sanity Checker")
     print("==================================================")
     
-    DATA_DIR = "data/test_data_for_ITER_SPI_fast"
+    DATA_DIR = "data/EHL-2/scan_1d22_ang12_massloss_neon"
     
     # 1. Load a single Ground Truth frame
     print("[1/4] Loading a single Ground Truth frame...")

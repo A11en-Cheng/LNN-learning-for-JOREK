@@ -1,6 +1,7 @@
 import sys
 import os
 import torch
+import pytest
 from torch_geometric.data import Batch
 
 # 确保可以导入 src 模块
@@ -16,11 +17,13 @@ from src.training.trainer import JorekTrainer
 from src.utils.visualization import plot_jorek_field
 
 def test_training_and_visualization():
+    if not os.path.isdir("data/EHL-2/scan_1d22_ang12_massloss_neon"):
+        pytest.skip("real EHL-2 data not present")
     print("==================================================")
     print("1. Loading HDF5 Data (Simulating t and t+1)...")
-    # 假设 jorek000000.h5 是 t 时刻，jorek000010.h5 是 t+1 时刻
-    parser_t0 = JorekDataParser("data/test_data_for_pipeline_EHL-2/jorek000000.h5")
-    parser_t1 = JorekDataParser("data/test_data_for_pipeline_EHL-2/jorek000010.h5")
+    # jorek002710.h5 是 t 时刻，jorek002720.h5 是 t+1 时刻
+    parser_t0 = JorekDataParser("data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5")
+    parser_t1 = JorekDataParser("data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002720.h5")
     
     graph_t0 = parser_t0.parse_to_graph()
     graph_t1 = parser_t1.parse_to_graph()

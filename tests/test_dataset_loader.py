@@ -22,8 +22,11 @@ def test_jorek_sequence_loader():
     """
     print("Initializing Data Setup for Test...")
     
-    # 获取测试数据目录
-    data_dir = "data/test_data_for_ITER_SPI_fast"
+    # 获取测试数据目录（marker 对齐后的有效帧）
+    data_dir = "data/EHL-2/scan_1d22_ang12_massloss_neon"
+    if not os.path.isdir(data_dir):
+        import pytest
+        pytest.skip("real EHL-2 data not present")
     
     # 简单的预检查：确保有足够的测试 HFD5 文件
     files = sorted(os.listdir(data_dir))

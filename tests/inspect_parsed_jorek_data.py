@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--root",
         type=str,
-        default="data/test_data_for_pipeline_EHL-2",
+        default="data/EHL-2/scan_1d22_ang12_massloss_neon",
         help="Directory containing jorek*.h5 files",
     )
     parser.add_argument(

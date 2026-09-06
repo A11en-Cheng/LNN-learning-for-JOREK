@@ -221,3 +221,6 @@ __marimo__/
 output/*
 output*/
 output/
+# Local tooling and virtual environments
+.torch-cuda-env/
+.tools/

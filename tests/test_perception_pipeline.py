@@ -1,6 +1,7 @@
 import sys
 import os
 import torch
+import pytest
 
 # 确保可以导入 src 模块
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,9 +10,11 @@ from src.data.jorek_h5_parser import JorekDataParser
 from src.models.gnn_encoder import JorekGNNEncoder
 
 def test_perception_pipeline():
+    if not os.path.isdir("data/EHL-2/scan_1d22_ang12_massloss_neon"):
+        pytest.skip("real EHL-2 data not present")
     print("==================================================")
     print("1. Loading HDF5 Data (No Rasterization)...")
-    parser = JorekDataParser("data/test_data_for_pipeline_EHL-2/jorek000000.h5")
+    parser = JorekDataParser("data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5")
     graph_data = parser.parse_to_graph()
     print(f"   Graph Data: {graph_data}")
     

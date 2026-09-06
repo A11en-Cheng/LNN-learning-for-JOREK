@@ -11,7 +11,7 @@ from src.data.jorek_h5_parser import JorekDataParser
 
 def check_data_stats():
     # Use the first file
-    filepath = r"d:\Proj\lnn_jorek\LNN-learning-for-JOREK\data\test_data_for_ITER_SPI_fast\jorek00050.h5"
+    filepath = "data/EHL-2/scan_1d22_ang12_massloss_neon/jorek002710.h5"
     if not os.path.exists(filepath):
         print(f"File not found: {filepath}")
         return
