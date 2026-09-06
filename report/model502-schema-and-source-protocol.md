@@ -35,11 +35,18 @@ and must not be silently loaded.
 
 ## 2. Conditions
 
-The optional global condition vector is `[eta, visco, ZK_perp, ZK_par]` with a
-same-sized boolean `condition_mask`.  A missing namelist parameter has value
-zero **and mask=false**; zero is not a physical fallback value.  Conditioning
-is not yet wired into the network, so data must retain both tensors until its
-ablation is implemented.
+The optional global condition vector is the canonical flattened vector built by
+`src/data/parameter_channel.py`, with a same-sized boolean `condition_mask`
+marking default-filled entries.  As of protocol v2 (ADR-0007) the
+condition channel is built by `src/data/parameter_channel.py` from the HDF5
+scalars, the run namelist (`jorek_namelist_spitest`, falling back to
+`jorek_namelist`) and the JOREK defaults in `preset_parameters.f90`.  A
+missing parameter is filled with its JOREK default and carries
+`provenance=default`; consumers must read provenance rather than the raw value
+to detect fill-ins.  Derived quantities (`time_evol_theta/zeta`) are computed
+with the same logic as JOREK.  Conditioning is not yet wired into the network,
+so data must retain the condition vector and provenance until its ablation is
+implemented.
 
 ## 3. Source-control contract
 

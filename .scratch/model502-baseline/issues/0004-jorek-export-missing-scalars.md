@@ -7,3 +7,5 @@ Blocked by: #0003
 
 验收：新 h5 含清单内全部标量且数值与 namelist 一致。标签：ready-for-human（JOREK/Fortran 侧改动）。
 
+状态：superseded（被 #0005 取代）。缺失标量改从 run namelist + JOREK 默认值读取（ADR-0007），
+无需修改 JOREK 写出代码；`visco_par_par` 未设定时按 `preset_parameters.f90` 默认 0.0。

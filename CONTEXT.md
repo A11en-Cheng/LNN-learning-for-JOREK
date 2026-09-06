@@ -33,8 +33,10 @@
   注意 `dcoef` 是 Dommaschk 平衡位形系数，不是输运系数。
 - **tstep 与帧间 dt**：`tstep` 是每帧记录的 JOREK 内部时间步（自适应，约 0.05–5）；相邻帧的 `dt` 是多个
   tstep 之和，实测在耦合阶段约 0.45–50，**非均匀**，必须按每步真实 dt 训练。
-- **condition vector（条件向量）**：`[eta, visco, ZK_perp, ZK_par]` 加同尺寸布尔 `condition_mask`；
-  缺失参数值填 0 且 `mask=false`，0 不是物理回退值。尚未接入网络。
+- **condition vector（条件向量）**：零维参数通道（`src/data/parameter_channel.py`）输出的固定顺序向量：
+  h5 标量 → run namelist（`jorek_namelist_spitest` 优先）→ JOREK 默认值（`preset_parameters.f90`）。
+  缺失项以默认值填充并带 `provenance ∈ {h5, namelist, default, derived}`；消费方凭 provenance 判真伪，
+  不以值是否为 0/1.0 判断。`time_evol_theta/zeta` 是派生量，用 JOREK 同款逻辑计算（ADR-0007）。尚未接入网络。
 - **residual/delta（残差）**：decoder 输出归一化的单步残差 `delta_x [N,9]`；更新规则恒为
   `x_{t+1} = x_t + delta_x`；物理 `dt` 单独传给 LNN 与 PDE 诊断，不混进残差。
 - **monolithic baseline（单体基线）**：九场单网络（encoder/LNN/decoder），可无源训练，是 MoE 消融的唯一对照。

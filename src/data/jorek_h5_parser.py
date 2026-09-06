@@ -3,9 +3,7 @@ import torch
 import numpy as np
 from torch_geometric.data import Data
 import os
-import re
 from .model502_schema import (
-    CONDITION_FIELD_NAMES,
     FIELD_NAMES,
     NUM_SOURCE_FIELDS,
     SOURCE_DATASET_ALIASES,
@@ -14,6 +12,7 @@ from .model502_schema import (
     reorder_h5_values,
     validate_source_tensor,
 )
+from .parameter_channel import build_condition_vector
 
 class JorekDataParser:
     """
@@ -76,121 +75,16 @@ class JorekDataParser:
         edge_index = torch.tensor(list(edges), dtype=torch.long).t().contiguous()
         return edge_index
 
-    def _to_text(self, raw_val):
-        """将 HDF5 原始对象安全转换为文本。"""
-        if raw_val is None:
-            return ""
-        if isinstance(raw_val, (bytes, bytearray, np.bytes_)):
-            return raw_val.decode('utf-8', errors='ignore')
-        if isinstance(raw_val, str):
-            return raw_val
-        if isinstance(raw_val, np.ndarray):
-            if raw_val.size == 0:
-                return ""
-            if raw_val.dtype.kind in {'S', 'U'}:
-                flat = raw_val.reshape(-1)
-                return "\n".join(self._to_text(v) for v in flat)
-            if raw_val.dtype.kind == 'O':
-                flat = raw_val.reshape(-1)
-                return "\n".join(self._to_text(v) for v in flat)
-            return ""
-        return str(raw_val)
-
-    def _parse_float(self, value):
-        """支持 Fortran D 指数格式（如 1.0D-6）。"""
-        if isinstance(value, (int, float, np.floating, np.integer)):
-            return float(value)
-        if isinstance(value, (bytes, bytearray, np.bytes_)):
-            value = value.decode('utf-8', errors='ignore')
-        if isinstance(value, str):
-            value = value.strip().replace('D', 'E').replace('d', 'e')
-            return float(value)
-        if isinstance(value, np.ndarray) and value.size > 0:
-            return self._parse_float(value.reshape(-1)[0])
-        raise ValueError(f"Cannot parse float from value type: {type(value)}")
-
-    def _extract_param_from_text(self, text, key):
-        """从 namelist 文本中提取参数值，支持 key=val 或 key val。"""
-        pattern = rf"(?i)\b{re.escape(key)}\b\s*(?:=|:)\s*([+-]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eEdD][+-]?\d+)?)"
-        match = re.search(pattern, text)
-        if not match:
-            pattern = rf"(?i)\b{re.escape(key)}\b\s+([+-]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eEdD][+-]?\d+)?)"
-            match = re.search(pattern, text)
-        if not match:
-            return None
-        return self._parse_float(match.group(1))
-
-    def extract_namelist_params(self, h5_file):
-        """Extract conditions and a presence mask without inventing fallback values."""
-        params = {
-            'eta': 0.0,
-            'visco': 0.0,
-            'ZK_perp': 0.0,
-            'ZK_par': 0.0,
-        }
-        available = {key: False for key in params}
-
-        key_aliases = {
-            'eta': ['eta'],
-            'visco': ['visco', 'viscosity'],
-            'ZK_perp': ['ZK_perp', 'zk_perp', 'zkperp'],
-            'ZK_par': ['ZK_par', 'zk_par', 'zkpar'],
-        }
-
-        # 1) 根属性中直接取值，优先解析数值属性
-        for attr_key, attr_val in h5_file.attrs.items():
-            attr_key_l = str(attr_key).strip().lower()
-            for out_key, aliases in key_aliases.items():
-                if attr_key_l in {a.lower() for a in aliases}:
-                    try:
-                        params[out_key] = self._parse_float(attr_val)
-                        available[out_key] = True
-                    except Exception:
-                        pass
-
-        # 2) 收集可能包含 namelist 的文本块
-        text_blobs = []
-
-        # 2.1 根属性中的文本
-        for _, attr_val in h5_file.attrs.items():
-            txt = self._to_text(attr_val)
-            if txt:
-                text_blobs.append(txt)
-
-        # 2.2 常见数据集命名
-        candidate_names = ['namelist', 'input', 'jorek_input', 'input_file', 'jorek_namelist']
-        for name in candidate_names:
-            if name in h5_file:
-                obj = h5_file[name]
-                if isinstance(obj, h5py.Dataset):
-                    txt = self._to_text(obj[()])
-                    if txt:
-                        text_blobs.append(txt)
-
-        # 2.3 顶层包含 input/namelist 关键词的字符串数据集
-        for name, obj in h5_file.items():
-            if not isinstance(obj, h5py.Dataset):
-                continue
-            name_l = str(name).lower()
-            if 'input' in name_l or 'namelist' in name_l:
-                txt = self._to_text(obj[()])
-                if txt:
-                    text_blobs.append(txt)
-
-        # 3) 从文本中补全参数
-        if text_blobs:
-            combined_text = "\n".join(text_blobs)
-            for out_key, aliases in key_aliases.items():
-                if available[out_key]:
-                    continue
-                for alias in aliases:
-                    val = self._extract_param_from_text(combined_text, alias)
-                    if val is not None:
-                        params[out_key] = float(val)
-                        available[out_key] = True
-                        break
-
-        return params, available
+    @staticmethod
+    def _load_namelist_text(filepath):
+        """Read the run's active namelist stored beside the frame files."""
+        candidates = ("jorek_namelist_spitest", "jorek_namelist")
+        for name in candidates:
+            path = os.path.join(os.path.dirname(filepath), name)
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8", errors="replace") as stream:
+                    return stream.read()
+        return None
 
     @staticmethod
     def _leaf_name(path):
@@ -374,14 +268,17 @@ class JorekDataParser:
             else:
                 raise KeyError("Physical values array 'values' not found.")
 
-            # 4.1 提取 namelist 条件参数
-            namelist_params, namelist_available = self.extract_namelist_params(f)
-            condition = torch.tensor(
-                [namelist_params[name] for name in CONDITION_FIELD_NAMES], dtype=torch.float32
+            # 4.1 零维参数通道：h5 标量 -> namelist -> JOREK 默认值，带逐项 provenance
+            namelist_text = self._load_namelist_text(self.filepath)
+            condition_data = build_condition_vector(f, namelist_text=namelist_text)
+            condition = torch.tensor(condition_data["vector"], dtype=torch.float32)
+            condition_names = tuple(condition_data["names"])
+            provenance_codes = {"h5": 0, "namelist": 1, "default": 2, "derived": 3}
+            condition_provenance = torch.tensor(
+                [provenance_codes[condition_data["provenance"][name]] for name in condition_names],
+                dtype=torch.long,
             )
-            condition_mask = torch.tensor(
-                [namelist_available[name] for name in CONDITION_FIELD_NAMES], dtype=torch.bool
-            )
+            condition_mask = condition_provenance != provenance_codes["default"]
 
             source, source_paths = self.extract_model502_sources(f, x.shape[0])
             if source is None and self.require_source:
@@ -447,8 +344,9 @@ class JorekDataParser:
                 time=time_val,
                 norm_factors=norm_factors,
                 triangles=triangles,
-                namelist_params=namelist_params,
                 condition=condition,
+                condition_names=condition_names,
+                condition_provenance=condition_provenance,
                 condition_mask=condition_mask,
                 source_available=torch.tensor(source is not None, dtype=torch.bool),
             )
