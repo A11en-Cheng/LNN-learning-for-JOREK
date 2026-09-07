@@ -20,6 +20,7 @@ from src.models.gnn_decoder import JorekGNNDecoder
 from src.models.gnn_encoder import JorekGNNEncoder
 from src.models.lnn_processor import JorekLNNProcessor
 from src.models.loss import JorekLoss
+from src.physics.model502_physics import model502_residuals
 from src.training.trainer import JorekTrainer
 from tests.train_baseline import (
     load_condition_stats,
@@ -53,6 +54,36 @@ def _compute_channel_weights(train_windows, train_frames, args, n_sample=150):
     weights[2] = 0.0  # Z_j derived from psi
     weights[3] = 0.0  # omega derived from u
     return weights
+
+
+def physics_train_step(trainer, encoder, processor, decoder, criterion, batches, horizons, device, lambda_phys):
+    from src.models.loss import compute_spatial_weights
+    trainer.optimizer.zero_grad()
+    total = torch.zeros((), device=device)
+    state = None
+    pair_count = 0
+    for t, batch in enumerate(batches):
+        for k in horizons:
+            if t + k >= len(batches):
+                continue
+            target = batches[t + k]
+            dt = float((target.time[0] - batch.time[0]).item())
+            latent = encoder(batch.x, batch.edge_index, batch.pos, condition=batch.condition, batch=batch.batch)
+            latent, state = processor(latent, batch.batch, state=state, time_steps=dt / trainer.dt_ref, controls=getattr(batch, "source", None))
+            delta, p = decoder(latent, batch.edge_index, batch.batch, batch.pos)
+            pred = batch.x + delta * (dt / trainer.dt_ref)
+            w = compute_spatial_weights(batch.x[:, 0], batch.batch, 10.0, 5.0)
+            loss, _ = criterion(pred, target.x, p, torch.zeros(1, 1, device=device), node_weights=w)
+            phys = sum(model502_residuals(pred, batch.x, batch, dt).values())
+            total = total + loss + lambda_phys * phys
+            pair_count += 1
+    total = total / max(pair_count, 1)
+    total.backward()
+    torch.nn.utils.clip_grad_norm_(encoder.parameters(), trainer.clip_value)
+    torch.nn.utils.clip_grad_norm_(processor.parameters(), trainer.clip_value)
+    torch.nn.utils.clip_grad_norm_(decoder.parameters(), trainer.clip_value)
+    trainer.optimizer.step()
+    return float(total.item())
 
 
 def _monotonic_windows(run_frames, times_by_run, window):
@@ -131,6 +162,7 @@ def main():
     parser.add_argument("--window", type=int, default=5)
     parser.add_argument("--horizons", type=int, nargs="+", default=[1, 2])
     parser.add_argument("--lr", type=float, default=1e-3)
+    parser.add_argument("--lambda-phys", type=float, default=1e-2)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--cache", default="/tmp/ehl2_cache")
@@ -181,7 +213,10 @@ def main():
         frames = train_frames[run]
         graphs = [normalize_graph(_load_cached(run, frames[start + off].index, args.cache), sm, ss, cm, cs, um, us) for off in range(args.window)]
         batches = [Batch.from_data_list([g]).to(device) for g in graphs]
-        loss, _ = trainer.train_step_multihorizon(batches, torch.zeros(1, 1, device=device), horizons=args.horizons)
+        loss = physics_train_step(
+            trainer, encoder, processor, decoder, trainer.criterion,
+            batches, args.horizons, device, args.lambda_phys,
+        )
         train_log.append(loss)
         if (step + 1) % args.eval_every == 0:
             vloss, by_run = _eval_loss(val_windows, val_frames, (encoder, processor, decoder), stats, args, device)
