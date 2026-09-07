@@ -55,7 +55,7 @@ class JorekGNNDecoder(nn.Module):
         for _ in range(num_layers - 1):
             self.smooth_convs.append(GATConv(hidden_dim, hidden_dim // heads, heads=heads, concat=concat, edge_dim=edge_dim))
             self.smooth_norms.append(LayerNorm(hidden_dim))
-        self.smooth_head = nn.Linear(hidden_dim, 5)
+        self.smooth_head = nn.Linear(hidden_dim, 3)  # psi, Phi, v_par
         
         # ==========================================
         # Head 2: thermodynamic/impurity fields: rho, T_i, rho_imp, T_e
@@ -122,7 +122,7 @@ class JorekGNNDecoder(nn.Module):
                 x_smooth = _silu_block(
                     self.smooth_convs[i], self.smooth_norms[i], x_smooth, edge_index, edge_attr
                 )
-        out_smooth = self.smooth_head(x_smooth) # [Total_nodes, 5]
+        out_smooth = self.smooth_head(x_smooth) # [Total_nodes, 3]: psi, Phi, v_par
         
         # 3. Head 2: Thermodynamic Fields (rho, T)
         x_thermo = self.thermo_proj(x_shared)
@@ -155,11 +155,11 @@ class JorekGNNDecoder(nn.Module):
         state_vars = torch.empty((latent_x.size(0), NUM_STATE_FIELDS), device=latent_x.device)
         state_vars[:, 0] = out_smooth[:, 0] # psi
         state_vars[:, 1] = out_smooth[:, 1] # Phi
-        state_vars[:, 2] = out_smooth[:, 2] # Z_j
-        state_vars[:, 3] = out_smooth[:, 3] # omega
+        state_vars[:, 2] = 0.0  # Z_j: derived from psi (masked from loss)
+        state_vars[:, 3] = 0.0  # omega: derived from u (masked from loss)
         state_vars[:, 4] = out_thermo[:, 0] # rho
         state_vars[:, 5] = out_thermo[:, 1] # T_i
-        state_vars[:, 6] = out_smooth[:, 4] # v_par
+        state_vars[:, 6] = out_smooth[:, 2] # v_par
         state_vars[:, 7] = out_thermo[:, 2] # rho_imp
         state_vars[:, 8] = out_thermo[:, 3] # T_e
         validate_state_tensor(state_vars, name="decoder residual")

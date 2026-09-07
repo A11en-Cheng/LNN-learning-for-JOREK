@@ -105,7 +105,12 @@ def run_single_sample_overfit(
         ).to(device)
         for graph in sequence
     ]
-    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, lambda_phys=0.0)
+    channel_weights = torch.ones(9)
+    channel_weights[2] = 0.0  # Z_j derived from psi
+    channel_weights[3] = 0.0  # omega derived from u
+    criterion = JorekLoss(
+        lambda_reg=1.0, lambda_cls=0.0, lambda_phys=0.0, channel_weights=channel_weights
+    )
     dt = float(step_dt_jorek(sequence[0], sequence[1]).mean().item())
     dt_ref = dt
     trainer = JorekTrainer(

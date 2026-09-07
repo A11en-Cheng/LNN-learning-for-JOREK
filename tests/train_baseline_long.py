@@ -49,8 +49,10 @@ def _compute_channel_weights(train_windows, train_frames, args, n_sample=150):
     inv = inv / inv.mean()
     boost = torch.ones(9)
     boost[5] *= 1.5  # T_i
-    boost[2] *= 1.5  # Z_j
-    return (inv * boost).clamp(0.5, 3.0)
+    weights = (inv * boost).clamp(0.5, 3.0)
+    weights[2] = 0.0  # Z_j derived from psi
+    weights[3] = 0.0  # omega derived from u
+    return weights
 
 
 def _monotonic_windows(run_frames, times_by_run, window):
