@@ -3,16 +3,24 @@ import torch
 import numpy as np
 from torch_geometric.data import Data
 import os
+import re
 from .model502_schema import (
+    BACKGROUND_SOURCE_DATASET_ALIASES,
+    BACKGROUND_SOURCE_FIELD_NAMES,
+    BACKGROUND_SOURCE_VECTOR_DATASET_ALIASES,
     FIELD_NAMES,
-    NUM_SOURCE_FIELDS,
-    SOURCE_DATASET_ALIASES,
-    SOURCE_FIELD_NAMES,
-    SOURCE_VECTOR_DATASET_ALIASES,
+    MARKER_PROJECTION_FIELD_NAMES,
+    NUM_BACKGROUND_SOURCE_FIELDS,
+    NUM_MARKER_PROJECTION_FIELDS,
     reorder_h5_values,
-    validate_source_tensor,
+    validate_background_source_tensor,
+    validate_projection_tensor,
 )
 from .parameter_channel import build_condition_vector
+
+
+STATE_FRAME_RE = re.compile(r"^jorek(?P<index>\d+)\.h5$")
+PROJECTION_FRAME_RE = re.compile(r"^projections(?P<index>\d+)\.h5$")
 
 class JorekDataParser:
     """
@@ -104,14 +112,14 @@ class JorekDataParser:
             f"got shape {raw.shape}."
         )
 
-    def extract_model502_sources(self, h5_file, num_nodes):
-        """Read Model 502 forcing controls from an explicitly named HDF5 schema.
+    def extract_background_sources(self, h5_file, num_nodes):
+        """Read Model 502 background controls from an explicitly named HDF5 schema.
 
         Accepted layouts are either one vector dataset named ``sources`` (or a
         documented alias) with shape ``[3, ..., nodes]``, or three scalar nodal
-        datasets named with SOURCE_DATASET_ALIASES.  Partial source records are
-        rejected because filling a missing source with zero would mislabel a
-        forced trajectory as unforced.
+        datasets named with BACKGROUND_SOURCE_DATASET_ALIASES.  Partial records
+        are rejected because filling a missing source with zero would mislabel
+        a forced trajectory as unforced.
         """
         datasets = {}
 
@@ -122,16 +130,18 @@ class JorekDataParser:
         h5_file.visititems(collect)
         by_leaf = {self._leaf_name(path): (path, obj) for path, obj in datasets.items()}
 
-        for vector_name in SOURCE_VECTOR_DATASET_ALIASES:
+        for vector_name in BACKGROUND_SOURCE_VECTOR_DATASET_ALIASES:
             entry = by_leaf.get(vector_name)
             if entry is None:
                 continue
             path, dataset = entry
             raw = np.asarray(dataset[()])
-            if raw.ndim >= 2 and raw.shape[0] == NUM_SOURCE_FIELDS and raw.shape[-1] == num_nodes:
+            if raw.ndim >= 2 and raw.shape[0] == NUM_BACKGROUND_SOURCE_FIELDS and raw.shape[-1] == num_nodes:
                 index = (slice(None),) + (0,) * (raw.ndim - 2) + (slice(None),)
                 source = torch.as_tensor(raw[index], dtype=torch.float32).transpose(0, 1).contiguous()
-                return validate_source_tensor(source), {name: path for name in SOURCE_FIELD_NAMES}
+                return validate_background_source_tensor(source), {
+                    name: path for name in BACKGROUND_SOURCE_FIELD_NAMES
+                }
             raise ValueError(
                 f"Source vector dataset '{path}' must have shape [3, ..., {num_nodes}], got {raw.shape}."
             )
@@ -139,9 +149,9 @@ class JorekDataParser:
         source_columns = []
         source_paths = {}
         missing = []
-        for field_name in SOURCE_FIELD_NAMES:
+        for field_name in BACKGROUND_SOURCE_FIELD_NAMES:
             entry = None
-            for alias in SOURCE_DATASET_ALIASES[field_name]:
+            for alias in BACKGROUND_SOURCE_DATASET_ALIASES[field_name]:
                 if alias in by_leaf:
                     entry = by_leaf[alias]
                     break
@@ -156,12 +166,72 @@ class JorekDataParser:
 
         if missing and source_columns:
             raise ValueError(
-                f"Partial Model 502 source record in {self.filepath}; missing {missing}. "
-                "Provide all S_rho/S_T_i/S_T_e fields or none."
+                f"Partial Model 502 background source record in {self.filepath}; missing {missing}. "
+                "Provide all particle_source/heat_i_source/heat_e_source fields or none."
             )
         if missing:
             return None, {}
-        return validate_source_tensor(torch.cat(source_columns, dim=1)), source_paths
+        return validate_background_source_tensor(torch.cat(source_columns, dim=1)), source_paths
+
+    def _frame_index(self) -> int | None:
+        match = STATE_FRAME_RE.fullmatch(os.path.basename(self.filepath))
+        return int(match.group("index")) if match else None
+
+    def _find_projection_file(self):
+        """Locate the sibling ``projections<index>.h5`` for this frame, if any."""
+        index = self._frame_index()
+        if index is None:
+            return None
+        directory = os.path.dirname(self.filepath)
+        for name in sorted(os.listdir(directory)):
+            match = PROJECTION_FRAME_RE.fullmatch(name)
+            if match is not None and int(match.group("index")) == index:
+                return os.path.join(directory, name)
+        return None
+
+    def _extract_marker_projections(self, projection_path, num_nodes, frame_handle):
+        """Read the five marker projections and verify node/time alignment.
+
+        ``projections*.h5`` stores ``t_now`` in physical seconds while the state
+        frame stores JOREK units; the conversion factor is the frame's
+        ``t_norm`` (verified on real EHL-2 data).  The projection values use the
+        use_marker order ``[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]``.
+        """
+        with h5py.File(projection_path, "r") as handle:
+            if "values" not in handle or "t_now" not in handle:
+                raise ValueError(
+                    f"{os.path.basename(projection_path)} is missing 'values'/'t_now'"
+                )
+            raw = handle["values"]
+            if raw.ndim != 4 or raw.shape[2] != 1:
+                raise ValueError(
+                    f"{os.path.basename(projection_path)}: expected harmonic dimension 1, "
+                    f"got values shape {raw.shape}"
+                )
+            if raw.shape[0] < NUM_MARKER_PROJECTION_FIELDS:
+                raise ValueError(
+                    f"{os.path.basename(projection_path)}: expected at least "
+                    f"{NUM_MARKER_PROJECTION_FIELDS} channels, got {raw.shape[0]}"
+                )
+            if raw.shape[-1] != num_nodes:
+                raise ValueError(
+                    f"{os.path.basename(projection_path)}: node count {raw.shape[-1]} "
+                    f"does not match state node count {num_nodes}"
+                )
+            values = raw[:NUM_MARKER_PROJECTION_FIELDS, 0, 0, :]
+            projection_time = float(handle["t_now"][()].item())
+
+        frame_time = float(frame_handle["t_now"][()].item())
+        t_norm = float(frame_handle["t_norm"][()].item()) if "t_norm" in frame_handle else 1.0
+        frame_seconds = frame_time * t_norm
+        tolerance = 1e-6 * max(1.0, abs(frame_seconds))
+        if abs(projection_time - frame_seconds) > tolerance:
+            raise ValueError(
+                f"{os.path.basename(projection_path)} time {projection_time:.6e}s is not "
+                f"aligned with state time {frame_seconds:.6e}s"
+            )
+        tensor = torch.as_tensor(values, dtype=torch.float32).transpose(0, 1).contiguous()
+        return validate_projection_tensor(tensor)
 
     def parse_to_graph(self) -> Data:
         """
@@ -280,11 +350,18 @@ class JorekDataParser:
             )
             condition_mask = condition_provenance != provenance_codes["default"]
 
-            source, source_paths = self.extract_model502_sources(f, x.shape[0])
-            if source is None and self.require_source:
+            background_source, background_paths = self.extract_background_sources(f, x.shape[0])
+
+            # Primary source-control channel: marker projections aligned to this frame.
+            projection_path = self._find_projection_file()
+            marker_source = None
+            if projection_path is not None:
+                marker_source = self._extract_marker_projections(projection_path, x.shape[0], f)
+            if marker_source is None and self.require_source:
                 raise ValueError(
-                    f"{self.filepath} has no complete Model 502 source record. Expected "
-                    f"{SOURCE_FIELD_NAMES}; do not use this file for forced training."
+                    f"{self.filepath} has no marker projection file "
+                    f"(projections<index>.h5 with the same frame index); do not use this "
+                    "frame for forced training."
                 )
 
             # 5. 读取时间戳 (如果存在)
@@ -348,10 +425,16 @@ class JorekDataParser:
                 condition_names=condition_names,
                 condition_provenance=condition_provenance,
                 condition_mask=condition_mask,
-                source_available=torch.tensor(source is not None, dtype=torch.bool),
+                source_available=torch.tensor(marker_source is not None, dtype=torch.bool),
+                background_available=torch.tensor(
+                    background_source is not None, dtype=torch.bool
+                ),
             )
-            if source is not None:
-                graph_data.source = source
+            if marker_source is not None:
+                graph_data.source = marker_source
+                graph_data.source_fields = MARKER_PROJECTION_FIELD_NAMES
+            if background_source is not None:
+                graph_data.background_source = background_source
             if boundary.shape[0] != graph_data.num_nodes:
                 raise ValueError(
                     f"Boundary array length {boundary.shape[0]} does not match node count {graph_data.num_nodes}."

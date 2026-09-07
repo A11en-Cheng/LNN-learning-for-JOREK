@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.nn.utils import clip_grad_norm_
-from src.data.model502_schema import validate_source_tensor, validate_state_tensor
+from src.data.model502_schema import validate_background_source_tensor, validate_state_tensor
 
 class JorekTrainer:
     """
@@ -39,7 +39,7 @@ class JorekTrainer:
         validate_state_tensor(batch_data.x, name="trainer current state")
         validate_state_tensor(target_states, name="trainer target state")
         if controls is not None:
-            validate_source_tensor(controls, name="trainer controls")
+            validate_background_source_tensor(controls, name="trainer controls")
 
         # 1. 设置为训练模式
         self.encoder.train()
@@ -91,7 +91,7 @@ class JorekTrainer:
             latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
             # Processor 现在返回 (output, hidden_state)
             if controls is not None:
-                validate_source_tensor(controls, name="trainer controls")
+                validate_background_source_tensor(controls, name="trainer controls")
             next_latent_features, _ = self.processor(latent_features, batch_data.batch, controls=controls)
             pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
             pred_states = batch_data.x + pred_delta

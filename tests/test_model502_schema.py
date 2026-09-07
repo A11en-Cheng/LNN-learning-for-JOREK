@@ -5,7 +5,12 @@ torch = pytest.importorskip("torch")
 from src.data.model502_schema import (
     FIELD_NAMES,
     H5_VALUES_INDICES,
+    MARKER_PROJECTION_FIELD_NAMES,
+    NUM_BACKGROUND_SOURCE_FIELDS,
+    NUM_MARKER_PROJECTION_FIELDS,
     NUM_SOURCE_FIELDS,
+    validate_background_source_tensor,
+    validate_projection_tensor,
     inverse_transform_state,
     reorder_h5_values,
     transform_state,
@@ -34,3 +39,19 @@ def test_source_contract_requires_exactly_three_channels():
     assert validate_source_tensor(valid) is valid
     with pytest.raises(ValueError, match="channels"):
         validate_source_tensor(torch.zeros(4, NUM_SOURCE_FIELDS - 1))
+
+
+def test_projection_contract_requires_exactly_five_channels():
+    assert MARKER_PROJECTION_FIELD_NAMES == (
+        "dE_ion", "rad_sink", "Z_eff", "Z_imp", "N_imp",
+    )
+    valid = torch.zeros(4, NUM_MARKER_PROJECTION_FIELDS)
+    assert validate_projection_tensor(valid) is valid
+    with pytest.raises(ValueError, match="channels"):
+        validate_projection_tensor(torch.zeros(4, NUM_MARKER_PROJECTION_FIELDS - 1))
+
+
+def test_background_source_contract_names():
+    assert NUM_BACKGROUND_SOURCE_FIELDS == 3
+    valid = torch.zeros(4, NUM_BACKGROUND_SOURCE_FIELDS)
+    assert validate_background_source_tensor(valid) is valid

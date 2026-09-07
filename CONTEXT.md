@@ -19,13 +19,15 @@
   以真实 `Δt=t_{t+k}-t_t` 作为 CfC 的 timespan，让网络拟合多尺度演化。
 - **transform（变换）**：热力学场 `rho/T_i/rho_imp/T_e` 先 `log1p(clamp(x,0))` 再 Z-score；其余场线性 Z-score；
   统计量只由训练 split 计算。负值被 clamp 属于数据质量事件，必须在数据报告里计数并解释。
-- **source-control contract（源项契约）**：三个节点级控制量 `S_rho, S_T_i, S_T_e`，三者要么全有要么全无；
-  无源帧（`source_available=false`）不是零源样本；强制训练用 `require_source=True`。
+- **source-control contract（源项契约 v2）**：两条独立控制通道，都只是控制量、永不作为学习目标。
+  主通道 = `projections*.h5` 五场投影 `[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]`（`Data.source [nodes,5]`），
+  按帧索引/节点数/时间对齐（投影 t_now 是物理秒，状态 t_now 是 JOREK 单位，换算用 `t_norm`）；
+  次通道 = 背景源 `[particle_source, heat_i_source, heat_e_source]`（`Data.background_source [nodes,3]`），
+  三者要么全有要么全无。无投影帧 `source_available=false` 是合法无源样本；强制训练用 `require_source=True`。
 - **part*.h5（粒子快照）**：marker_spi_source 每帧写出的原始 markers（位置/速度/权重/电荷态分布/出生时间），
   文件名编号与 `jorek*.h5` 对齐；这是源项信息的最原始来源。
 - **projections*.h5（源项投影）**：粒子源项投影到 JOREK 场上的五场输出
-  `[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]`（use_marker 模式，`n_var=5`）；它与协议 v1 的
-  `S_rho/S_T_i/S_T_e` 口径不一致，Phase 0.2 要对齐后升级协议为 v2。
+  `[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]`（use_marker 模式，`n_var=5`）；协议 v2 已以它为主控制通道。
 - **marker_spi_source**：JOREK 粒子-流体耦合程序（`particles/examples/marker_spi_source.f90`），
   是 part/projections 数据的产生方。
 - **参数通道（parameter channel）**：所有影响下一步状态的零维参数（粘性、热导、高阶平滑等）必须由 H5 输出。

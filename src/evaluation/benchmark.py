@@ -7,7 +7,12 @@ import torch.nn as nn
 import matplotlib.pyplot as plt
 
 from src.data.dataset import collate_temporal_graphs  # noqa: F401 (for type hints / consistency)
-from src.data.model502_schema import FIELD_INDEX, FIELD_NAMES, transform_state, validate_source_tensor
+from src.data.model502_schema import (
+    FIELD_INDEX,
+    FIELD_NAMES,
+    transform_state,
+    validate_background_source_tensor,
+)
 from src.models.loss import JorekPhysicsLoss, compute_normalized_flux
 from src.physics.grad_ops import compute_gradient, compute_divergence
 from src.physics.mhd import get_magnetic_field
@@ -638,9 +643,13 @@ class JorekEvaluator:
         div_rho_v = div_cart_rho_v + rho_v_R / (R + 1e-8)
 
         source_rho = torch.zeros_like(rho_next)
-        if hasattr(graph_data, "source") and graph_data.source is not None:
-            validate_source_tensor(graph_data.source, name="benchmark source")
-            source_rho = graph_data.source[:, 0:1].to(device=device, dtype=rho_next.dtype)
+        if hasattr(graph_data, "background_source") and graph_data.background_source is not None:
+            validate_background_source_tensor(
+                graph_data.background_source, name="benchmark background source"
+            )
+            source_rho = graph_data.background_source[:, 0:1].to(
+                device=device, dtype=rho_next.dtype
+            )
         res_mass_raw = (rho_next - rho_curr) / dt + div_rho_v - source_rho
         res_mass = (res_mass_raw * dt) / (torch.abs(rho_curr) + 1e-3)
 

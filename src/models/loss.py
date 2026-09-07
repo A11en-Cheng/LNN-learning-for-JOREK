@@ -2,7 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.data.model502_schema import FIELD_INDEX, validate_source_tensor, validate_state_tensor
+from src.data.model502_schema import (
+    FIELD_INDEX,
+    validate_background_source_tensor,
+    validate_state_tensor,
+)
 from src.physics.grad_ops import compute_gradient, compute_divergence
 from src.physics.mhd import get_magnetic_field
 from src.physics.cocos8 import reconstruct_velocity
@@ -491,9 +495,13 @@ class JorekPhysicsLoss(nn.Module):
 
         # --- Mass Continuity Residual (Dimensionless Relative Error) ---
         source_rho = torch.zeros_like(rho_next)
-        if hasattr(graph_data, "source") and graph_data.source is not None:
-            validate_source_tensor(graph_data.source, name="physics-loss source")
-            source_rho = graph_data.source[:, 0:1].to(device=device, dtype=rho_next.dtype)
+        if hasattr(graph_data, "background_source") and graph_data.background_source is not None:
+            validate_background_source_tensor(
+                graph_data.background_source, name="physics-loss background source"
+            )
+            source_rho = graph_data.background_source[:, 0:1].to(
+                device=device, dtype=rho_next.dtype
+            )
         res_mass_raw = (rho_next - rho_curr) / self.dt + div_rho_v - source_rho
         
         # 乘以 dt 抵消时间量纲，除以 rho 抵消密度量纲。结果为纯小数 (Δρ/ρ)

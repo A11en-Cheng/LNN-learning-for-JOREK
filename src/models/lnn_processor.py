@@ -1,7 +1,10 @@
 import torch
 import torch.nn as nn
 from torch_geometric.utils import unbatch
-from src.data.model502_schema import NUM_SOURCE_FIELDS, validate_source_tensor
+from src.data.model502_schema import (
+    NUM_BACKGROUND_SOURCE_FIELDS,
+    validate_background_source_tensor,
+)
 
 class JorekLNNProcessor(nn.Module):
     """
@@ -19,7 +22,7 @@ class JorekLNNProcessor(nn.Module):
         # genuinely unforced trajectory; callers must not replace unavailable
         # source data with zeros.
         self.control_encoder = nn.Sequential(
-            nn.Linear(NUM_SOURCE_FIELDS, latent_dim),
+            nn.Linear(NUM_BACKGROUND_SOURCE_FIELDS, latent_dim),
             nn.SiLU(),
             nn.Linear(latent_dim, latent_dim),
         )
@@ -64,7 +67,7 @@ class JorekLNNProcessor(nn.Module):
             next_state: 更新后的隐藏状态
         """
         if controls is not None:
-            validate_source_tensor(controls, name="processor controls")
+            validate_background_source_tensor(controls, name="processor controls")
             if controls.shape[0] != latent_x.shape[0]:
                 raise ValueError(
                     "processor controls and latent_x must have the same number of nodes: "

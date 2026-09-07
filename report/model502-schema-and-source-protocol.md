@@ -50,39 +50,47 @@ implemented.
 
 ## 3. Source-control contract
 
-Model 502 `mod_sources:sources` provides three node-local controls:
+Protocol v2 (ADR-0005, ADR-0007) defines two separate source channels, both
+controls and never learning targets.  The network's learning targets remain
+the nine native state fields; all source data is labelled a control.
 
-| Index | Name | Meaning in JOREK source routine |
+### 3.1 Marker projections (primary channel)
+
+`marker_spi_source` (use_marker mode) writes one `projections<index>.h5` per
+frame with five projected controls in this order:
+
+| Index | Name | Meaning |
 |---:|---|---|
-| 0 | `S_rho` | particle source in the background density equation |
-| 1 | `S_T_i` | ion heat source |
-| 2 | `S_T_e` | electron heat source |
+| 0 | `dE_ion` | ionisation energy source |
+| 1 | `rad_sink` | radiation energy sink |
+| 2 | `Z_eff` | effective charge |
+| 3 | `Z_imp` | impurity charge |
+| 4 | `N_imp` | impurity density |
 
-For a forced frame, the HDF5 must contain all three fields, in JOREK internal
-units and aligned to the state frame's nodes and `t_now`.  Accepted source
-layouts are:
+The parser loads the sibling `projections<index>.h5` matched by frame index and
+exposes `Data.source [nodes, 5]`.  Alignment is checked on three axes: node
+count, harmonic dimension (=1 for Phase 1 2D runs), and time.  `t_now` is
+stored in **physical seconds** in projection files but in **JOREK units** in
+state files; the conversion is `t_seconds = t_now * t_norm` using the state
+frame's `t_norm` dataset (verified on real EHL-2 data).  A frame without a
+matching projection file has `source_available=false`; it is a valid unforced
+sample, not a zero-source sample.
 
-- one dataset named `sources`, `source`, `model502_sources`, `controls`, or
-  `forcing`, shaped `[3, ..., nodes]`; or
-- three nodal datasets, using `S_rho`/`particle_source`,
-  `S_T_i`/`heat_i_source`, and `S_T_e`/`heat_e_source` (case-insensitive).
+### 3.2 Background sources (optional second channel)
 
-The parser exposes a raw physical `Data.source [nodes, 3]` only if all fields
-are present.  A partial record is an error.  A source-free frame has
-`source_available=false` and no `source` tensor; it is not a zero-source
-training sample.  Set `JorekSequenceDataset(require_source=True)` for forced
-training so that one incomplete frame fails the load.
+Model 502 `mod_sources:sources` provides three node-local background controls:
+`particle_source`, `heat_i_source`, `heat_e_source`.  Accepted layouts are one
+vector dataset (`sources`/`source`/`model502_sources`/`controls`/`forcing`,
+`[3, ..., nodes]`) or three nodal datasets with the documented aliases.  All
+three or none: a partial record is an error.  The parser exposes
+`Data.background_source [nodes, 3]`; the physics loss uses only
+`particle_source` in the provisional mass-continuity residual, and neither
+heat channel enters an energy residual until units and pressure convention are
+verified.
 
-Source controls must have separate training-split mean/std before being passed
-to `JorekLNNProcessor(..., controls=source_normalized)`.  The physics loss uses
-the raw `S_rho` only in the provisional mass-continuity residual.  `S_T_i` and
-`S_T_e` are deliberately not inserted into an energy residual until their
-units, pressure convention, and per-frame time alignment are verified.
-
-This first source contract does not claim that pellet deposition, impurity
-injection, radiation power, ionisation potential energy or all source terms in
-`mod_elt_matrix.f90` have been exported.  Those require a versioned extension
-after the new data identifies the exact JOREK output fields and units.
+This contract does not claim that pellet deposition, impurity injection,
+radiation power or all `mod_elt_matrix.f90` source terms are exported; those
+remain versioned extensions.
 
 ## 4. Data delivery checklist
 
@@ -90,8 +98,9 @@ For each new source-enabled sequence provide:
 
 1. Model 502 HDF5 state frames with 9 `values` channels, mesh topology,
    boundary, and monotonic `t_now`.
-2. The three source fields above for every frame, with shape and units recorded.
-3. The input namelist or its four requested parameters, plus an explicit
+2. The five projection fields for every forced frame, with shape and units
+   recorded, plus the optional three background source fields (all-or-nothing).
+3. The input namelist (`jorek_namelist_spitest` preferred), plus an explicit
    `model_id=502` provenance record.
 4. A train/validation/test split manifest at sequence level (never random frame
    splits), data version/hash, and the source's temporal convention: source at

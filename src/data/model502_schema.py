@@ -32,19 +32,39 @@ LOG1P_FIELD_NAMES: tuple[str, ...] = ("rho", "T_i", "rho_imp", "T_e")
 LOG1P_FIELD_INDICES: tuple[int, ...] = tuple(FIELD_INDEX[name] for name in LOG1P_FIELD_NAMES)
 LINEAR_FIELD_NAMES: tuple[str, ...] = tuple(name for name in FIELD_NAMES if name not in LOG1P_FIELD_NAMES)
 
-# These are the three controls returned by Model 502 ``mod_sources:sources``.
-# They are controls, not state variables, and must never be silently zero-filled.
-SOURCE_FIELD_NAMES: tuple[str, ...] = ("S_rho", "S_T_i", "S_T_e")
-SOURCE_FIELD_INDEX = {name: index for index, name in enumerate(SOURCE_FIELD_NAMES)}
-NUM_SOURCE_FIELDS = len(SOURCE_FIELD_NAMES)
-SOURCE_DATASET_ALIASES: Mapping[str, tuple[str, ...]] = {
-    "S_rho": ("s_rho", "particle_source", "particlesource"),
-    "S_T_i": ("s_t_i", "s_ti", "heat_i_source", "heatsource_i"),
-    "S_T_e": ("s_t_e", "s_te", "heat_e_source", "heatsource_e"),
+# Marker-spi particle projections (``projections*.h5``, use_marker mode) are the
+# primary source-control channel (ADR-0005): they are controls projected onto
+# the state mesh, never learning targets.
+MARKER_PROJECTION_FIELD_NAMES: tuple[str, ...] = (
+    "dE_ion", "rad_sink", "Z_eff", "Z_imp", "N_imp",
+)
+MARKER_PROJECTION_INDEX = {name: index for index, name in enumerate(MARKER_PROJECTION_FIELD_NAMES)}
+NUM_MARKER_PROJECTION_FIELDS = len(MARKER_PROJECTION_FIELD_NAMES)
+
+# Model 502 ``mod_sources:sources`` background controls form an optional second
+# channel.  A partial record is an error; nothing is ever silently zero-filled.
+BACKGROUND_SOURCE_FIELD_NAMES: tuple[str, ...] = (
+    "particle_source", "heat_i_source", "heat_e_source",
+)
+BACKGROUND_SOURCE_INDEX = {name: index for index, name in enumerate(BACKGROUND_SOURCE_FIELD_NAMES)}
+NUM_BACKGROUND_SOURCE_FIELDS = len(BACKGROUND_SOURCE_FIELD_NAMES)
+BACKGROUND_SOURCE_DATASET_ALIASES: Mapping[str, tuple[str, ...]] = {
+    "particle_source": ("s_rho", "particle_source", "particlesource"),
+    "heat_i_source": ("s_t_i", "s_ti", "heat_i_source", "heatsource_i"),
+    "heat_e_source": ("s_t_e", "s_te", "heat_e_source", "heatsource_e"),
 }
-SOURCE_VECTOR_DATASET_ALIASES: tuple[str, ...] = (
+BACKGROUND_SOURCE_VECTOR_DATASET_ALIASES: tuple[str, ...] = (
     "model502_sources", "sources", "source", "controls", "forcing",
 )
+
+# Protocol-v1 aliases for the three-channel background control path.  The
+# unforced-baseline trainer/processor still speak this vocabulary; they switch
+# to the projection channel in #0010.
+SOURCE_FIELD_NAMES = BACKGROUND_SOURCE_FIELD_NAMES
+SOURCE_FIELD_INDEX = BACKGROUND_SOURCE_INDEX
+NUM_SOURCE_FIELDS = NUM_BACKGROUND_SOURCE_FIELDS
+SOURCE_DATASET_ALIASES = BACKGROUND_SOURCE_DATASET_ALIASES
+SOURCE_VECTOR_DATASET_ALIASES = BACKGROUND_SOURCE_VECTOR_DATASET_ALIASES
 
 CONDITION_FIELD_NAMES: tuple[str, ...] = ("eta", "visco", "ZK_perp", "ZK_par")
 NUM_CONDITION_FIELDS = len(CONDITION_FIELD_NAMES)
@@ -74,6 +94,16 @@ def validate_state_tensor(value: torch.Tensor, *, name: str = "state") -> torch.
 
 def validate_source_tensor(value: torch.Tensor, *, name: str = "source") -> torch.Tensor:
     return validate_feature_tensor(value, SOURCE_FIELD_NAMES, name=name)
+
+
+def validate_projection_tensor(value: torch.Tensor, *, name: str = "marker projection") -> torch.Tensor:
+    return validate_feature_tensor(value, MARKER_PROJECTION_FIELD_NAMES, name=name)
+
+
+def validate_background_source_tensor(
+    value: torch.Tensor, *, name: str = "background source"
+) -> torch.Tensor:
+    return validate_feature_tensor(value, BACKGROUND_SOURCE_FIELD_NAMES, name=name)
 
 
 def reorder_h5_values(values: torch.Tensor) -> torch.Tensor:
