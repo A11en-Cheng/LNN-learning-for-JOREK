@@ -95,10 +95,20 @@ def test_parser_requires_projection_when_require_source(tmp_path):
 def test_parser_rejects_misaligned_projection_time(tmp_path):
     frame = tmp_path / "jorek00001.h5"
     _write_frame(frame, t_now=10.0)
-    _write_projection(tmp_path / "projections00001.h5", t_now=10.0 * T_NORM * 2.0)
+    _write_projection(tmp_path / "projections00001.h5", t_now=10.0 * T_NORM + 1e-4)
 
     with pytest.raises(ValueError, match="time"):
         JorekDataParser(str(frame)).parse_to_graph()
+
+
+def test_parser_accepts_projection_time_within_gather_window(tmp_path):
+    frame = tmp_path / "jorek00001.h5"
+    _write_frame(frame, t_now=10.0)
+    _write_projection(tmp_path / "projections00001.h5", t_now=10.0 * T_NORM + 2e-6)
+
+    graph = JorekDataParser(str(frame)).parse_to_graph()
+
+    assert bool(graph.source_available)
 
 
 def test_parser_rejects_multi_harmonic_projection(tmp_path):

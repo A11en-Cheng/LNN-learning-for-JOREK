@@ -224,7 +224,10 @@ class JorekDataParser:
         frame_time = float(frame_handle["t_now"][()].item())
         t_norm = float(frame_handle["t_norm"][()].item()) if "t_norm" in frame_handle else 1.0
         frame_seconds = frame_time * t_norm
-        tolerance = 1e-6 * max(1.0, abs(frame_seconds))
+        # The projection is written within the frame's gather window, so its
+        # recorded time can jitter by less than one output step (frame dt is
+        # ~4.4e-6 s in the coupled phase).  Accept offsets below 5e-6 s.
+        tolerance = 5e-6
         if abs(projection_time - frame_seconds) > tolerance:
             raise ValueError(
                 f"{os.path.basename(projection_path)} time {projection_time:.6e}s is not "
