@@ -1,7 +1,13 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.checkpoint import checkpoint as _torch_checkpoint
 from torch_geometric.nn import GATConv, LayerNorm, global_mean_pool
 from src.data.model502_schema import NUM_STATE_FIELDS, validate_state_tensor
+
+
+def _silu_block(conv, norm, x, edge_index, edge_attr):
+    return F.silu(norm(conv(x, edge_index, edge_attr=edge_attr)))
 
 class JorekGNNDecoder(nn.Module):
     """
@@ -11,7 +17,15 @@ class JorekGNNDecoder(nn.Module):
     - Head 1 (smooth/electromagnetic): psi, Phi, Z_j, omega, v_parallel
     - Head 2 (thermodynamic/impurity): rho, T_i, rho_imp, T_e
     """
-    def __init__(self, latent_dim=32, hidden_dim=64, output_dim=NUM_STATE_FIELDS, num_layers=2, edge_dim=2):
+    def __init__(
+        self,
+        latent_dim=32,
+        hidden_dim=64,
+        output_dim=NUM_STATE_FIELDS,
+        num_layers=2,
+        edge_dim=2,
+        checkpoint=False,
+    ):
         super(JorekGNNDecoder, self).__init__()
         if output_dim != NUM_STATE_FIELDS:
             raise ValueError(
@@ -20,6 +34,7 @@ class JorekGNNDecoder(nn.Module):
             )
         
         self.num_layers = num_layers
+        self.checkpoint = bool(checkpoint)
         
         # GATConv 参数
         heads = 2
@@ -81,25 +96,47 @@ class JorekGNNDecoder(nn.Module):
         edge_attr = pos[row] - pos[col] # [Num_edges, 2]
         
         # 1. 共享特征提取
-        x_shared = self.shared_conv(latent_x, edge_index, edge_attr=edge_attr)
-        x_shared = self.shared_norm(x_shared)
-        x_shared = torch.nn.functional.silu(x_shared)
+        use_checkpoint = self.checkpoint and self.training
+        if use_checkpoint:
+            x_shared = _torch_checkpoint(
+                _silu_block,
+                self.shared_conv, self.shared_norm, latent_x, edge_index, edge_attr,
+                use_reentrant=False,
+            )
+        else:
+            x_shared = _silu_block(
+                self.shared_conv, self.shared_norm, latent_x, edge_index, edge_attr
+            )
         
         # 2. Head 1: Smooth Fields (psi, Phi, v_par)
         x_smooth = x_shared
         for i in range(self.num_layers - 1):
-            x_smooth = self.smooth_convs[i](x_smooth, edge_index, edge_attr=edge_attr)
-            x_smooth = self.smooth_norms[i](x_smooth)
-            x_smooth = torch.nn.functional.silu(x_smooth)
+            if use_checkpoint:
+                x_smooth = _torch_checkpoint(
+                    _silu_block,
+                    self.smooth_convs[i], self.smooth_norms[i], x_smooth, edge_index, edge_attr,
+                    use_reentrant=False,
+                )
+            else:
+                x_smooth = _silu_block(
+                    self.smooth_convs[i], self.smooth_norms[i], x_smooth, edge_index, edge_attr
+                )
         out_smooth = self.smooth_head(x_smooth) # [Total_nodes, 5]
         
         # 3. Head 2: Thermodynamic Fields (rho, T)
         x_thermo = self.thermo_proj(x_shared)
-        x_thermo = torch.nn.functional.silu(x_thermo)
+        x_thermo = F.silu(x_thermo)
         for i in range(self.num_layers):
-            x_thermo = self.thermo_convs[i](x_thermo, edge_index, edge_attr=edge_attr)
-            x_thermo = self.thermo_norms[i](x_thermo)
-            x_thermo = torch.nn.functional.silu(x_thermo)
+            if use_checkpoint:
+                x_thermo = _torch_checkpoint(
+                    _silu_block,
+                    self.thermo_convs[i], self.thermo_norms[i], x_thermo, edge_index, edge_attr,
+                    use_reentrant=False,
+                )
+            else:
+                x_thermo = _silu_block(
+                    self.thermo_convs[i], self.thermo_norms[i], x_thermo, edge_index, edge_attr
+                )
         out_thermo = self.thermo_head(x_thermo) # [Total_nodes, 4]
         
         # 强制物理正定性 (Hard Constraint: Positivity for rho and T)

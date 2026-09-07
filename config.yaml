@@ -32,6 +32,7 @@ model:
   processor_layers: 2
   decoder_layers: 4
   source_dim: 3
+  checkpoint: true  # gradient-equivalent activation savings; see tests/test_checkpointing.py
 
 schema:
   version: "model502-state-v1"
