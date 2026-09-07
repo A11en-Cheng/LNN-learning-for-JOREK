@@ -1,5 +1,21 @@
 # Implementation progress log
 
+## 2026-09-07 — Phase 0 closed and the single-sample overfit gate passed
+
+- Data layer (#0001-#0005, #0002): EHL-2 2D fixtures and split manifest;
+  protocol v2 with the five-field marker-projection channel plus the
+  three-field background channel; machine-checked parameter-surface audit;
+  the zero-dim parameter channel (h5 → namelist → JOREK defaults, with
+  provenance).  The JOREK-side export ticket was superseded by the namelist
+  channel (ADR-0007).
+- Time dynamics (#0006): per-step physical dt (`step_dt_seconds`), multi-horizon
+  skip sampling, stateful LNN with BPTT boundaries, per-step dt in the physics
+  loss.
+- Gate (#0007): real single-sample overfit passes — loss drop 99.993%, no NaN,
+  reload difference 4.14e-7; 54 tests green.
+- Planned (#0014): ADAS coronal closure prototype validated against recorded
+  projections, feeding the three-mode forced rollout in #0012.
+
 ## 2026-09-05 — Model 502 schema and source-interface foundation
 
 Scope authorised by the user: validate the existing project, define the
