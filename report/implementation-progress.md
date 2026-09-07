@@ -43,6 +43,17 @@
   training + schedule, horizon-1 training, per-field weights, longer temporal
   context, phase-balanced windows).
 
+## 2026-09-07 (final) — model-internal time switched to JOREK units
+
+- Normalization relations verified in the JOREK sources and recorded in
+  `src/physics/definitions.md` §8 (rho_norm = central_density*1e20*central_mass*AMU,
+  t_norm = sqrt(mu0*rho_norm), v_norm = 1/t_norm; COCOS signs only at the IMAS
+  interface).  Model time is now JOREK units everywhere in the update rule and
+  the LNN timespan; seconds remain only at the physics boundary.
+- v5 retrain: same gate outcome as v4 (per-field ratio 1.26-1.35 vs
+  persistence, drift over threshold), confirming the unit convention is not the
+  blocker.  The JOREK-unit convention is kept as the final contract.
+
 ## 2026-09-05 — Model 502 schema and source-interface foundation
 
 Scope authorised by the user: validate the existing project, define the
