@@ -3,7 +3,7 @@ import pytest
 torch = pytest.importorskip("torch")
 pytest.importorskip("torch_geometric")
 
-from src.data.model502_schema import NUM_BACKGROUND_SOURCE_FIELDS, NUM_STATE_FIELDS
+from src.data.model502_schema import NUM_MARKER_PROJECTION_FIELDS, NUM_STATE_FIELDS
 from src.models.gnn_decoder import JorekGNNDecoder
 from src.models.gnn_encoder import JorekGNNEncoder
 from src.models.lnn_processor import JorekLNNProcessor
@@ -21,7 +21,7 @@ def test_model502_network_interface_returns_nine_field_residual():
 
     latent = encoder(x, edge_index, pos)
     next_latent, _ = processor(
-        latent, batch, controls=torch.randn(3, NUM_BACKGROUND_SOURCE_FIELDS)
+        latent, batch, controls=torch.randn(3, NUM_MARKER_PROJECTION_FIELDS)
     )
     delta, _ = decoder(next_latent, edge_index, batch, pos)
     assert delta.shape == (3, NUM_STATE_FIELDS)
@@ -33,7 +33,7 @@ def test_model502_checkpoint_reload_preserves_output(tmp_path):
     pos = torch.randn(3, 2)
     edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long)
     batch = torch.zeros(3, dtype=torch.long)
-    controls = torch.randn(3, NUM_BACKGROUND_SOURCE_FIELDS)
+    controls = torch.randn(3, NUM_MARKER_PROJECTION_FIELDS)
 
     encoder = JorekGNNEncoder(hidden_dim=16, latent_dim=8, num_layers=2).eval()
     processor = JorekLNNProcessor(latent_dim=8, hidden_size=8).eval()

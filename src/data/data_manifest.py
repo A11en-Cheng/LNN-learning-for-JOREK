@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -32,6 +33,7 @@ from src.data.model502_schema import (
     FIELD_NAMES,
     H5_VALUES_INDICES,
     LOG1P_FIELD_INDICES,
+    MARKER_PROJECTION_FIELD_NAMES,
     SCHEMA_VERSION,
 )
 from src.data.parameter_channel import build_condition_vector
@@ -39,6 +41,7 @@ from src.data.parameter_channel import build_condition_vector
 
 STATE_FRAME_RE = re.compile(r"^jorek(?P<index>\d+)\.h5$")
 MARKER_FRAME_RE = re.compile(r"^part(?P<index>\d+)\.h5$")
+PROJECTION_FRAME_RE = re.compile(r"^projections(?P<index>\d+)\.h5$")
 
 
 @dataclass(frozen=True)
@@ -190,6 +193,18 @@ def _dataset_id(data_root: Path) -> str:
     return digest.hexdigest()
 
 
+def _projection_path(state_path: Path) -> Path | None:
+    match = STATE_FRAME_RE.fullmatch(state_path.name)
+    if match is None:
+        return None
+    index = int(match.group("index"))
+    for name in sorted(os.listdir(state_path.parent)):
+        projection_match = PROJECTION_FRAME_RE.fullmatch(name)
+        if projection_match is not None and int(projection_match.group("index")) == index:
+            return state_path.parent / name
+    return None
+
+
 def _split_names(names: list[str], seed: int, val_frac: float, test_frac: float) -> dict[str, str]:
     if not 0 <= val_frac <= 1 or not 0 <= test_frac <= 1 or val_frac + test_frac >= 1:
         raise ValueError("val_frac and test_frac must satisfy 0 <= val+test < 1")
@@ -272,6 +287,10 @@ def _train_split_stats(data_root: Path, runs: list[dict]) -> dict:
     condition_sumsq = None
     condition_names: list[str] | None = None
     frame_count = 0
+    source_means = np.zeros(len(MARKER_PROJECTION_FIELD_NAMES), dtype=np.float64)
+    source_sumsq = np.zeros(len(MARKER_PROJECTION_FIELD_NAMES), dtype=np.float64)
+    source_nodes = 0
+    source_frames = 0
     namelist_cache: dict[str, str | None] = {}
     for run in runs:
         if run["split"] != "train":
@@ -302,6 +321,16 @@ def _train_split_stats(data_root: Path, runs: list[dict]) -> dict:
             condition_means += vector
             condition_sumsq += np.square(vector)
             frame_count += 1
+            projection_path = _projection_path(frame.state_path)
+            if projection_path is not None:
+                with h5py.File(projection_path, "r") as projection_handle:
+                    projection_values = projection_handle["values"][
+                        : len(MARKER_PROJECTION_FIELD_NAMES), 0, 0, :
+                    ].astype(np.float64)
+                source_means += projection_values.sum(axis=1)
+                source_sumsq += np.square(projection_values).sum(axis=1)
+                source_nodes += projection_values.shape[1]
+                source_frames += 1
     if counts == 0:
         raise ValueError("no training frames found")
     means /= counts
@@ -328,6 +357,21 @@ def _train_split_stats(data_root: Path, runs: list[dict]) -> dict:
             "names": condition_names or [],
             "mean": condition_mean.tolist(),
             "std": np.sqrt(np.clip(condition_variance, 0.0, None)).tolist(),
+        },
+        "source_stats": {
+            "names": list(MARKER_PROJECTION_FIELD_NAMES),
+            "mean": (source_means / source_nodes if source_nodes else source_means).tolist(),
+            "std": np.sqrt(
+                np.clip(
+                    source_sumsq / source_nodes - np.square(source_means / source_nodes),
+                    0.0,
+                    None,
+                )
+                if source_nodes
+                else np.zeros_like(source_means)
+            ).tolist(),
+            "n_frames": source_frames,
+            "n_samples": source_nodes,
         },
     }
 

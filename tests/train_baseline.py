@@ -44,7 +44,17 @@ def load_condition_stats(manifest_path: str) -> tuple[torch.Tensor, torch.Tensor
     return mean, std
 
 
-def normalize_graph(graph, mean, std, cond_mean=None, cond_std=None) -> Data:
+def load_source_stats(manifest_path: str) -> tuple[torch.Tensor, torch.Tensor]:
+    manifest = json.loads(Path(manifest_path).read_text())
+    source = manifest["stats"]["source_stats"]
+    mean = torch.tensor(source["mean"], dtype=torch.float32)
+    std = torch.tensor(source["std"], dtype=torch.float32)
+    return mean, std
+
+
+def normalize_graph(
+    graph, mean, std, cond_mean=None, cond_std=None, source_mean=None, source_std=None
+) -> Data:
     x_norm = standardize(transform_state(graph.x), mean, std, name="state")
     condition = None
     if hasattr(graph, "condition"):
@@ -52,6 +62,10 @@ def normalize_graph(graph, mean, std, cond_mean=None, cond_std=None) -> Data:
         if cond_mean is not None:
             safe_std = torch.where(cond_std > 0, cond_std, torch.ones_like(cond_std))
             condition = (condition - cond_mean) / safe_std
+    source = None
+    if hasattr(graph, "source") and source_mean is not None:
+        safe_std = torch.where(source_std > 0, source_std, torch.ones_like(source_std))
+        source = (graph.source - source_mean) / safe_std
     return Data(
         x=x_norm,
         edge_index=graph.edge_index,
@@ -60,6 +74,7 @@ def normalize_graph(graph, mean, std, cond_mean=None, cond_std=None) -> Data:
         time=graph.time,
         t_norm=graph.t_norm,
         condition=condition,
+        source=source,
     )
 
 
@@ -87,6 +102,7 @@ def train_baseline(
     train_runs = [run["name"] for run in manifest["runs"] if run["split"] == "train"][:max_runs]
     mean, std = load_stats(manifest_path)
     cond_mean, cond_std = load_condition_stats(manifest_path)
+    source_mean, source_std = load_source_stats(manifest_path)
     run_frames = {name: aligned_frames(Path("data/EHL-2") / name) for name in train_runs}
     rng = random.Random(seed)
     torch.manual_seed(seed)
@@ -122,6 +138,8 @@ def train_baseline(
                 std,
                 cond_mean,
                 cond_std,
+                source_mean,
+                source_std,
             )
             for offset in range(window_len)
         ]
@@ -141,6 +159,7 @@ def train_baseline(
         "decoder": decoder.state_dict(),
         "stats": {"mean": mean.tolist(), "std": std.tolist()},
         "condition_stats": {"mean": cond_mean.tolist(), "std": cond_std.tolist()},
+        "source_stats": {"mean": source_mean.tolist(), "std": source_std.tolist()},
         "meta": {
             "seed": seed,
             "steps": len(losses),

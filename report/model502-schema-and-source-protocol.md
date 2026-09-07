@@ -79,6 +79,11 @@ frame's `t_norm` dataset (verified on real EHL-2 data).  A frame without a
 matching projection file has `source_available=false`; it is a valid unforced
 sample, not a zero-source sample.
 
+Source controls are linearly Z-scored with the train-split statistics
+(`source_stats` in the split manifest, computed only on training frames that
+carry a projection) before being injected through the LNN control encoder.
+Unforced frames pass `controls=None`; they are never zero-filled.
+
 ### 3.2 Background sources (optional second channel)
 
 Model 502 `mod_sources:sources` provides three node-local background controls:

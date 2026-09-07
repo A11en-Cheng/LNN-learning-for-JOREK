@@ -170,6 +170,38 @@ def test_build_manifest_reports_mesh_consistency(tmp_path):
     assert inconsistent["mesh"]["n_grids"] == 2
 
 
+def test_build_manifest_records_train_only_source_stats(tmp_path):
+    run_train = _make_run(tmp_path, "t_run", indices=[1, 2], marker_indices=[1, 2])
+    run_val = _make_run(tmp_path, "v_run", indices=[1], marker_indices=[1])
+    for index, field1 in ((1, 0.0), (2, 2.0)):
+        with h5py.File(run_train / f"projections{index:05d}.h5", "w") as p:
+            values = np.zeros((5, 4, 1, NODES))
+            values[0, 0, 0, :] = 2.0
+            values[1, 0, 0, :] = field1
+            p["values"] = values
+            p["t_now"] = np.array([float(index)])
+    with h5py.File(run_val / "projections00001.h5", "w") as p:
+        values = np.full((5, 4, 1, NODES), 999.0)
+        p["values"] = values
+        p["t_now"] = np.array([1.0])
+
+    manifest = build_manifest(tmp_path, seed=7, val_frac=0.5, test_frac=0.0)
+    stats = manifest["stats"]["source_stats"]
+    train_name = next(run["name"] for run in manifest["runs"] if run["split"] == "train")
+
+    assert stats["names"][:2] == ["dE_ion", "rad_sink"]
+    if train_name == "t_run":
+        assert stats["mean"][0] == pytest.approx(2.0)
+        assert stats["std"][0] == pytest.approx(0.0)
+        assert stats["mean"][1] == pytest.approx(1.0)
+        assert stats["std"][1] == pytest.approx(1.0)
+        assert stats["n_frames"] == 2
+    else:
+        assert stats["mean"][0] == pytest.approx(999.0)
+        assert stats["std"][0] == pytest.approx(0.0)
+        assert stats["n_frames"] == 1
+
+
 @pytest.mark.skipif(
     not (lambda p: p.exists())(
         __import__("pathlib").Path("data/EHL-2/scan_1d22_ang12_massloss_neon")

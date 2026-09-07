@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.nn.utils import clip_grad_norm_
-from src.data.model502_schema import validate_background_source_tensor, validate_state_tensor
+from src.data.model502_schema import validate_projection_tensor, validate_state_tensor
 from src.data.dataset import step_dt_jorek
 from src.models.loss import compute_spatial_weights
 
@@ -91,8 +91,9 @@ class JorekTrainer:
         """
         validate_state_tensor(batch_data.x, name="trainer current state")
         validate_state_tensor(target_states, name="trainer target state")
+        controls = controls if controls is not None else getattr(batch_data, "source", None)
         if controls is not None:
-            validate_background_source_tensor(controls, name="trainer controls")
+            validate_projection_tensor(controls, name="trainer controls")
 
         # 1. 设置为训练模式
         self.encoder.train()
@@ -169,8 +170,9 @@ class JorekTrainer:
         with torch.no_grad():
             latent_features = self.encoder(*_encoder_inputs(self.encoder, batch_data))
             # Processor 现在返回 (output, hidden_state)
+            controls = controls if controls is not None else getattr(batch_data, "source", None)
             if controls is not None:
-                validate_background_source_tensor(controls, name="trainer controls")
+                validate_projection_tensor(controls, name="trainer controls")
             state_in = state if state is not None else self.hidden_state
             if detach_state_on_entry:
                 state_in = _detach_state_struct(state_in)
@@ -227,7 +229,11 @@ class JorekTrainer:
         pair_count = 0
         for t, batch in enumerate(batch_list):
             state_t = self.hidden_state
-            controls = controls_list[t] if controls_list is not None else None
+            controls = (
+                controls_list[t]
+                if controls_list is not None
+                else getattr(batch, "source", None)
+            )
             for k in horizons:
                 if t + k >= len(batch_list):
                     continue

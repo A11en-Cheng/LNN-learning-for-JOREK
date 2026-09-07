@@ -1,10 +1,7 @@
 import torch
 import torch.nn as nn
 from torch_geometric.utils import unbatch
-from src.data.model502_schema import (
-    NUM_BACKGROUND_SOURCE_FIELDS,
-    validate_background_source_tensor,
-)
+from src.data.model502_schema import NUM_MARKER_PROJECTION_FIELDS, validate_projection_tensor
 
 class JorekLNNProcessor(nn.Module):
     """
@@ -22,7 +19,7 @@ class JorekLNNProcessor(nn.Module):
         # genuinely unforced trajectory; callers must not replace unavailable
         # source data with zeros.
         self.control_encoder = nn.Sequential(
-            nn.Linear(NUM_BACKGROUND_SOURCE_FIELDS, latent_dim),
+            nn.Linear(NUM_MARKER_PROJECTION_FIELDS, latent_dim),
             nn.SiLU(),
             nn.Linear(latent_dim, latent_dim),
         )
@@ -60,14 +57,14 @@ class JorekLNNProcessor(nn.Module):
             time_steps: 时间步长信息 (可选)。
                         推荐传入一个标量 Δt（物理时间间隔），
                         LNN 将在当前时间步对所有节点使用相同的 Δt 进行连续时间积分。
-            controls: 可选的、已归一化 Model 502 源项 ``[Total_nodes, 3]``，
-                      顺序为 ``[S_rho, S_T_i, S_T_e]``。
+            controls: 可选的、已归一化 Model 502 五场投影 ``[Total_nodes, 5]``，
+                      顺序为 ``[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]``。
         Returns:
             next_latent_output: LNN 的输出特征 [Total_nodes, latent_dim]
             next_state: 更新后的隐藏状态
         """
         if controls is not None:
-            validate_background_source_tensor(controls, name="processor controls")
+            validate_projection_tensor(controls, name="processor controls")
             if controls.shape[0] != latent_x.shape[0]:
                 raise ValueError(
                     "processor controls and latent_x must have the same number of nodes: "

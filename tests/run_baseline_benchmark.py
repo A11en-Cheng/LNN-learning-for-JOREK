@@ -75,6 +75,8 @@ def evaluate_rollout(
     norm_frames = []
     cond_mean = torch.tensor(checkpoint["condition_stats"]["mean"], dtype=torch.float32, device=device)
     cond_std = torch.tensor(checkpoint["condition_stats"]["std"], dtype=torch.float32, device=device)
+    source_mean = torch.tensor(checkpoint["source_stats"]["mean"], dtype=torch.float32, device=device)
+    source_std = torch.tensor(checkpoint["source_stats"]["std"], dtype=torch.float32, device=device)
     for index in range(warmup + horizon + 1):
         graph = JorekDataParser(str(frames[index].state_path)).parse_to_graph()
         condition = None
@@ -82,6 +84,11 @@ def evaluate_rollout(
             condition = graph.condition.to(device)
             safe_std = torch.where(cond_std > 0, cond_std, torch.ones_like(cond_std))
             condition = (condition - cond_mean) / safe_std
+        source = None
+        if hasattr(graph, "source"):
+            source = graph.source.to(device)
+            safe_std = torch.where(source_std > 0, source_std, torch.ones_like(source_std))
+            source = (source - source_mean) / safe_std
         norm_frames.append(
             Batch.from_data_list(
                 [Data(
@@ -92,6 +99,7 @@ def evaluate_rollout(
                     time=graph.time,
                     t_norm=graph.t_norm,
                     condition=condition,
+                    source=source,
                 )]
             ).to(device)
         )
@@ -157,6 +165,7 @@ def evaluate_rollout(
                 time=target.time,
                 t_norm=target.t_norm,
                 condition=getattr(target, "condition", None),
+                source=getattr(target, "source", None),
             )
 
     mean_model = [sum(model_rmse[name]) / len(model_rmse[name]) for name in FIELD_NAMES]

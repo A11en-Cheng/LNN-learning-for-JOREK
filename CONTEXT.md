@@ -23,7 +23,8 @@
   主通道 = `projections*.h5` 五场投影 `[dE_ion, rad_sink, Z_eff, Z_imp, N_imp]`（`Data.source [nodes,5]`），
   按帧索引/节点数/时间对齐（投影 t_now 是物理秒，状态 t_now 是 JOREK 单位，换算用 `t_norm`）；
   次通道 = 背景源 `[particle_source, heat_i_source, heat_e_source]`（`Data.background_source [nodes,3]`），
-  三者要么全有要么全无。无投影帧 `source_available=false` 是合法无源样本；强制训练用 `require_source=True`。
+  三者要么全有要么全无。源项注入前按 manifest 的 train-only `source_stats` 做线性 z-score（#0010）；
+  无投影帧 `source_available=false` 是合法无源样本，controls=None 不零填充；强制训练用 `require_source=True`。
 - **part*.h5（粒子快照）**：marker_spi_source 每帧写出的原始 markers（位置/速度/权重/电荷态分布/出生时间），
   文件名编号与 `jorek*.h5` 对齐；这是源项信息的最原始来源。
 - **projections*.h5（源项投影）**：粒子源项投影到 JOREK 场上的五场输出
