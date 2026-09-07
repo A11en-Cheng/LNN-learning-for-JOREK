@@ -107,8 +107,10 @@ def run_single_sample_overfit(
     ]
     criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, lambda_phys=0.0)
     dt = float(step_dt_jorek(sequence[0], sequence[1]).mean().item())
+    dt_ref = dt
     trainer = JorekTrainer(
         encoder, processor, decoder, None, criterion, lr=lr, clip_value=1.0,
+        dt_ref=dt_ref,
     )
     target_p = torch.zeros(1, 1, device=device)
 

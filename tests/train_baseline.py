@@ -117,8 +117,9 @@ def train_baseline(
         latent_dim=32, hidden_dim=64, output_dim=9, num_layers=4, edge_dim=2, checkpoint=True
     ).to(device)
     criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.05)
+    dt_ref = _estimate_dt_ref_jorek(run_frames, train_runs, seed)
     trainer = JorekTrainer(
-        encoder, processor, decoder, None, criterion, lr=lr, clip_value=1.0
+        encoder, processor, decoder, None, criterion, lr=lr, clip_value=1.0, dt_ref=dt_ref
     )
 
     losses = []
@@ -168,6 +169,7 @@ def train_baseline(
             "dataset_id": manifest["dataset_id"],
             "train_runs": train_runs,
             "final_loss": float(losses[-1]) if losses else None,
+            "dt_ref": dt_ref,
         },
     }
     torch.save(checkpoint, output / "baseline_checkpoint.pt")
@@ -175,6 +177,23 @@ def train_baseline(
         "\n".join(f"{index},{value}" for index, value in enumerate(losses))
     )
     return checkpoint["meta"]
+
+
+def _estimate_dt_ref_jorek(run_frames, train_runs, seed):
+    rng = random.Random(seed)
+    dts = []
+    for _ in range(200):
+        name = rng.choice(train_runs)
+        frames = run_frames[name]
+        start = rng.randrange(len(frames) - 1)
+        with h5py.File(frames[start].state_path, "r") as handle:
+            t_a = float(handle["t_now"][()].item())
+        with h5py.File(frames[start + 1].state_path, "r") as handle:
+            t_b = float(handle["t_now"][()].item())
+        dt = t_b - t_a
+        if dt > 0:
+            dts.append(dt)
+    return float(sum(dts) / len(dts)) if dts else 1.0
 
 
 def main():

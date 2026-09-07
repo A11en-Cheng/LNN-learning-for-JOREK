@@ -36,6 +36,7 @@ def evaluate_rollout(
     run_name,
     warmup,
     horizon,
+    dt_ref=1.0,
     data_root="data/EHL-2",
     device="cpu",
 ) -> dict:
@@ -138,7 +139,7 @@ def evaluate_rollout(
             )
             delta, _ = decoder(next_latent, current.edge_index, current.batch, current.pos)
             dt_step = frame_dt(warmup + h)
-            pred = current.x + delta * dt_step
+            pred = current.x + delta * (dt_step / dt_ref)
             for field_index, name in enumerate(FIELD_NAMES):
                 model_rmse[name].append(
                     float((pred[:, field_index] - target.x[:, field_index]).square().mean().sqrt().item())
@@ -211,6 +212,7 @@ def main():
         run_name=args.run,
         warmup=args.warmup,
         horizon=args.horizon,
+        dt_ref=float(checkpoint["meta"].get("dt_ref", 1.0)),
         device=args.device,
     )
     result["checkpoint"] = args.checkpoint
