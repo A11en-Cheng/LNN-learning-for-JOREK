@@ -18,3 +18,9 @@ log10 eV）、日冕三对角求解、Te 轴标定（least_squares），单测�
 成本 3.5ms/帧 = 模型步 5.8%（naive；预计算矩网格可压到 2% 内，但负精度结果下暂不优化）。
 `tests/run_adas_closure_validation.py` 产出 report.json。#0012 的"闭包控制"模式据此改判：暂用真值/冻结，
 闭包留作慢相或平衡相的可选项。
+
+2026-09-07 追加（按用户指示改用 JOREK 同思路）：新增 `src/physics/charge_state_closure.py` 时间推进
+电荷态闭包（显式欧拉 SCD/ACD + 逐态 Lz + max(P,0)，与 marker_spi_source 的 CE_marker=.false. 分支一致，
+ADAS 轴换算 cm⁻³→m⁻³、eV→K）。单测通过（归一化、有界、有限），但 val 序列校验同样 R²≈0
+（`tests/run_charge_state_validation.py`）。结论：源项力矩受 marker 输运/烧蚀历史主导，
+节点局部的电荷态时间积分也无法重建；含源推演必须把投影作为外部控制（真值/冻结），闭包路线关闭。
