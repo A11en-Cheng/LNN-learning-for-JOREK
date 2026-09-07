@@ -130,6 +130,9 @@ def test_build_manifest_split_is_sequence_level_and_stats_are_train_only(tmp_pat
     psi = stats["fields"]["psi"]
     assert psi["mean"] == pytest.approx(2.0)  # canonical index 0 takes raw channel 2
     assert psi["std"] == pytest.approx(0.0)
+    condition = stats["condition"]
+    assert condition["names"]
+    assert len(condition["mean"]) == len(condition["names"]) == len(condition["std"])
 
 
 def test_build_manifest_is_seed_deterministic_and_hashes_layout(tmp_path):

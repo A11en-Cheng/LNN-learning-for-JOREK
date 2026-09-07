@@ -59,7 +59,8 @@ def evaluate_rollout(
     std = torch.tensor(checkpoint["stats"]["std"], dtype=torch.float32, device=device)
 
     encoder = JorekGNNEncoder(
-        input_dim=9, hidden_dim=64, latent_dim=32, num_layers=4, edge_dim=2
+        input_dim=9, hidden_dim=64, latent_dim=32, num_layers=4, edge_dim=2,
+        condition_dim=len(checkpoint["condition_stats"]["mean"]),
     ).to(device)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64, num_layers=1).to(device)
     decoder = JorekGNNDecoder(
@@ -71,8 +72,15 @@ def evaluate_rollout(
     encoder.eval(); processor.eval(); decoder.eval()
 
     norm_frames = []
+    cond_mean = torch.tensor(checkpoint["condition_stats"]["mean"], dtype=torch.float32, device=device)
+    cond_std = torch.tensor(checkpoint["condition_stats"]["std"], dtype=torch.float32, device=device)
     for index in range(warmup + horizon + 1):
         graph = JorekDataParser(str(frames[index].state_path)).parse_to_graph()
+        condition = None
+        if hasattr(graph, "condition"):
+            condition = graph.condition.to(device)
+            safe_std = torch.where(cond_std > 0, cond_std, torch.ones_like(cond_std))
+            condition = (condition - cond_mean) / safe_std
         norm_frames.append(
             Batch.from_data_list(
                 [Data(
@@ -82,6 +90,7 @@ def evaluate_rollout(
                     pos=graph.pos,
                     time=graph.time,
                     t_norm=graph.t_norm,
+                    condition=condition,
                 )]
             ).to(device)
         )
@@ -94,7 +103,10 @@ def evaluate_rollout(
     with torch.no_grad():
         for index in range(warmup):
             batch = norm_frames[index]
-            latent = encoder(batch.x, batch.edge_index, batch.pos)
+            latent = encoder(
+                batch.x, batch.edge_index, batch.pos,
+                condition=getattr(batch, "condition", None), batch=batch.batch,
+            )
             _, state = processor(latent, batch.batch, state=state, time_steps=physical_dt(index))
 
         model_rmse = {name: [] for name in FIELD_NAMES}
@@ -107,7 +119,10 @@ def evaluate_rollout(
         mass_0 = float(torch.sum(initial_physical[:, 4] * current.pos[:, 0]).item())
         for h in range(horizon):
             target = norm_frames[warmup + h + 1]
-            latent = encoder(current.x, current.edge_index, current.pos)
+            latent = encoder(
+                current.x, current.edge_index, current.pos,
+                condition=getattr(current, "condition", None), batch=current.batch,
+            )
             next_latent, state = processor(
                 latent, current.batch, state=state, time_steps=physical_dt(warmup + h)
             )
@@ -138,6 +153,7 @@ def evaluate_rollout(
                 batch=current.batch,
                 time=target.time,
                 t_norm=target.t_norm,
+                condition=getattr(target, "condition", None),
             )
 
     mean_model = [sum(model_rmse[name]) / len(model_rmse[name]) for name in FIELD_NAMES]

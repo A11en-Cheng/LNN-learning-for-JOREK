@@ -34,6 +34,7 @@ from src.data.model502_schema import (
     LOG1P_FIELD_INDICES,
     SCHEMA_VERSION,
 )
+from src.data.parameter_channel import build_condition_vector
 
 
 STATE_FRAME_RE = re.compile(r"^jorek(?P<index>\d+)\.h5$")
@@ -267,15 +268,40 @@ def _train_split_stats(data_root: Path, runs: list[dict]) -> dict:
     sumsq = np.zeros(9, dtype=np.float64)
     counts = 0
     negative = np.zeros(9, dtype=np.int64)
+    condition_means = None
+    condition_sumsq = None
+    condition_names: list[str] | None = None
+    frame_count = 0
+    namelist_cache: dict[str, str | None] = {}
     for run in runs:
         if run["split"] != "train":
             continue
+        run_dir = data_root / run["name"]
+        if run["name"] not in namelist_cache:
+            namelist_text = None
+            for candidate in ("jorek_namelist_spitest", "jorek_namelist"):
+                candidate_path = run_dir / candidate
+                if candidate_path.exists():
+                    namelist_text = candidate_path.read_text(errors="replace")
+                    break
+            namelist_cache[run["name"]] = namelist_text
+        namelist_text = namelist_cache[run["name"]]
         for frame in aligned_frames(data_root / run["name"]):
             values, negative_count = _canonical_transformed_values(frame.state_path)
             counts += values.shape[0]
             means += values.sum(axis=0)
             sumsq += np.square(values).sum(axis=0)
             negative += negative_count
+            with h5py.File(frame.state_path, "r") as handle:
+                condition = build_condition_vector(handle, namelist_text=namelist_text)
+            vector = condition["vector"]
+            if condition_means is None:
+                condition_names = list(condition["names"])
+                condition_means = np.zeros(len(vector), dtype=np.float64)
+                condition_sumsq = np.zeros(len(vector), dtype=np.float64)
+            condition_means += vector
+            condition_sumsq += np.square(vector)
+            frame_count += 1
     if counts == 0:
         raise ValueError("no training frames found")
     means /= counts
@@ -288,7 +314,22 @@ def _train_split_stats(data_root: Path, runs: list[dict]) -> dict:
             "std": float(np.sqrt(variance[index])),
             "n_negative": int(negative[index]),
         }
-    return {"schema": SCHEMA_VERSION, "n_samples": counts, "fields": fields}
+    condition_mean = condition_means / frame_count if condition_means is not None else np.zeros(0)
+    condition_variance = (
+        condition_sumsq / frame_count - np.square(condition_mean)
+        if condition_sumsq is not None
+        else np.zeros(0)
+    )
+    return {
+        "schema": SCHEMA_VERSION,
+        "n_samples": counts,
+        "fields": fields,
+        "condition": {
+            "names": condition_names or [],
+            "mean": condition_mean.tolist(),
+            "std": np.sqrt(np.clip(condition_variance, 0.0, None)).tolist(),
+        },
+    }
 
 
 def main() -> None:

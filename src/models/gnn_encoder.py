@@ -30,6 +30,7 @@ class JorekGNNEncoder(nn.Module):
         num_layers=3,
         edge_dim=2,
         checkpoint=False,
+        condition_dim=0,
     ):
         super(JorekGNNEncoder, self).__init__()
         if input_dim != NUM_STATE_FIELDS:
@@ -40,6 +41,7 @@ class JorekGNNEncoder(nn.Module):
         
         self.num_layers = num_layers
         self.checkpoint = bool(checkpoint)
+        self.condition_dim = int(condition_dim)
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         
@@ -61,7 +63,15 @@ class JorekGNNEncoder(nn.Module):
         self.convs.append(GATConv(hidden_dim, latent_dim, heads=heads, concat=False, edge_dim=edge_dim))
         self.norms.append(LayerNorm(latent_dim))
 
-    def forward(self, x, edge_index, pos):
+        self.condition_mlp = None
+        if self.condition_dim > 0:
+            self.condition_mlp = nn.Sequential(
+                nn.Linear(self.condition_dim, hidden_dim),
+                nn.SiLU(),
+                nn.Linear(hidden_dim, input_dim),
+            )
+
+    def forward(self, x, edge_index, pos, condition=None, batch=None):
         """
         Args:
             x: 节点特征矩阵 [Total_nodes, 9] in Model 502 canonical order
@@ -69,8 +79,25 @@ class JorekGNNEncoder(nn.Module):
             pos: 节点坐标矩阵 [Total_nodes, 2] (R, Z)
         Returns:
             latent_x: 潜在节点特征 [Total_nodes, latent_dim]
+            condition: 可选的零维条件向量 [Batch, condition_dim]，注入点为 encoder 输入
+            batch: PyG batch 索引，用于把条件广播到各图的节点
         """
         validate_state_tensor(x, name="encoder input")
+        if condition is not None:
+            if self.condition_mlp is None:
+                raise ValueError("encoder built without condition_dim cannot take a condition")
+            condition = torch.as_tensor(condition, dtype=x.dtype, device=x.device)
+            if condition.dim() == 1:
+                condition = condition.view(1, -1)
+            if condition.shape[1] != self.condition_dim:
+                raise ValueError(
+                    f"condition must have {self.condition_dim} entries, got {condition.shape[1]}"
+                )
+            embedding = self.condition_mlp(condition)
+            if batch is not None:
+                x = x + embedding[batch]
+            else:
+                x = x + embedding.expand(x.size(0), -1)
         
         # 计算几何特征 (Delta R, Delta Z) 作为 edge_attr
         row, col = edge_index

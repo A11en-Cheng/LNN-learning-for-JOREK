@@ -36,8 +36,22 @@ def load_stats(manifest_path: str) -> tuple[torch.Tensor, torch.Tensor]:
     return mean, std
 
 
-def normalize_graph(graph, mean, std) -> Data:
+def load_condition_stats(manifest_path: str) -> tuple[torch.Tensor, torch.Tensor]:
+    manifest = json.loads(Path(manifest_path).read_text())
+    condition = manifest["stats"]["condition"]
+    mean = torch.tensor(condition["mean"], dtype=torch.float32)
+    std = torch.tensor(condition["std"], dtype=torch.float32)
+    return mean, std
+
+
+def normalize_graph(graph, mean, std, cond_mean=None, cond_std=None) -> Data:
     x_norm = standardize(transform_state(graph.x), mean, std, name="state")
+    condition = None
+    if hasattr(graph, "condition"):
+        condition = graph.condition.clone()
+        if cond_mean is not None:
+            safe_std = torch.where(cond_std > 0, cond_std, torch.ones_like(cond_std))
+            condition = (condition - cond_mean) / safe_std
     return Data(
         x=x_norm,
         edge_index=graph.edge_index,
@@ -45,6 +59,7 @@ def normalize_graph(graph, mean, std) -> Data:
         pos=graph.pos,
         time=graph.time,
         t_norm=graph.t_norm,
+        condition=condition,
     )
 
 
@@ -71,13 +86,15 @@ def train_baseline(
     manifest = json.loads(Path(manifest_path).read_text())
     train_runs = [run["name"] for run in manifest["runs"] if run["split"] == "train"][:max_runs]
     mean, std = load_stats(manifest_path)
+    cond_mean, cond_std = load_condition_stats(manifest_path)
     run_frames = {name: aligned_frames(Path("data/EHL-2") / name) for name in train_runs}
     rng = random.Random(seed)
     torch.manual_seed(seed)
     device = torch.device(device if torch.cuda.is_available() else "cpu")
 
     encoder = JorekGNNEncoder(
-        input_dim=9, hidden_dim=64, latent_dim=32, num_layers=4, edge_dim=2, checkpoint=True
+        input_dim=9, hidden_dim=64, latent_dim=32, num_layers=4, edge_dim=2,
+        checkpoint=True, condition_dim=cond_mean.numel(),
     ).to(device)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64, num_layers=1).to(device)
     decoder = JorekGNNDecoder(
@@ -101,6 +118,8 @@ def train_baseline(
                 JorekDataParser(str(frames[start + offset].state_path)).parse_to_graph(),
                 mean,
                 std,
+                cond_mean,
+                cond_std,
             )
             for offset in range(window_len)
         ]
@@ -119,6 +138,7 @@ def train_baseline(
         "processor": processor.state_dict(),
         "decoder": decoder.state_dict(),
         "stats": {"mean": mean.tolist(), "std": std.tolist()},
+        "condition_stats": {"mean": cond_mean.tolist(), "std": cond_std.tolist()},
         "meta": {
             "seed": seed,
             "steps": len(losses),

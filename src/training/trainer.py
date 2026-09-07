@@ -19,6 +19,12 @@ def _detach_state_struct(state):
         return state.detach()
     return state
 
+
+def _encoder_inputs(encoder, batch):
+    """Feed the encoder, passing the condition only when it has a conditioning head."""
+    condition = getattr(batch, "condition", None) if getattr(encoder, "condition_dim", 0) > 0 else None
+    return batch.x, batch.edge_index, batch.pos, condition, batch.batch
+
 class JorekTrainer:
     """
     训练循环管理器。
@@ -88,7 +94,7 @@ class JorekTrainer:
         self.optimizer.zero_grad()
         
         # 3. 前向传播 (Perception -> Cognition -> Reconstruction)
-        latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
+        latent_features = self.encoder(*_encoder_inputs(self.encoder, batch_data))
         # Processor 现在返回 (output, hidden_state)
         state_in = state if state is not None else self.hidden_state
         if detach_state_on_entry:
@@ -152,7 +158,7 @@ class JorekTrainer:
         self.decoder.eval()
         
         with torch.no_grad():
-            latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
+            latent_features = self.encoder(*_encoder_inputs(self.encoder, batch_data))
             # Processor 现在返回 (output, hidden_state)
             if controls is not None:
                 validate_background_source_tensor(controls, name="trainer controls")
@@ -218,7 +224,7 @@ class JorekTrainer:
                     continue
                 target = batch_list[t + k]
                 dt = float(step_dt_seconds(batch, target).mean().item())
-                latent = self.encoder(batch.x, batch.edge_index, batch.pos)
+                latent = self.encoder(*_encoder_inputs(self.encoder, batch))
                 next_latent, next_state = self.processor(
                     latent,
                     batch.batch,

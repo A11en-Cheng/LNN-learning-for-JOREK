@@ -40,7 +40,9 @@
 - **condition vector（条件向量）**：零维参数通道（`src/data/parameter_channel.py`）输出的固定顺序向量：
   h5 标量 → run namelist（`jorek_namelist_spitest` 优先）→ JOREK 默认值（`preset_parameters.f90`）。
   缺失项以默认值填充并带 `provenance ∈ {h5, namelist, default, derived}`；消费方凭 provenance 判真伪，
-  不以值是否为 0/1.0 判断。`time_evol_theta/zeta` 是派生量，用 JOREK 同款逻辑计算（ADR-0007）。尚未接入网络。
+  不以值是否为 0/1.0 判断。`time_evol_theta/zeta` 是派生量，用 JOREK 同款逻辑计算（ADR-0007）。
+  通道含 44 维：输运基底 + 场景判别参数（n_spi/pellet_density/gamma_*/particlesource/ellip/bc_natural_open），
+  统计量由 manifest 在 train split 上计算。已接入网络：encoder 输入的逐节点加法注入（#0011）。
 - **residual/delta（残差）**：decoder 输出归一化的单步残差 `delta_x [N,9]`；更新规则恒为
   `x_{t+1} = x_t + delta_x`；物理 `dt` 单独传给 LNN 与 PDE 诊断，不混进残差。
 - **monolithic baseline（单体基线）**：九场单网络（encoder/LNN/decoder），可无源训练，是 MoE 消融的唯一对照。

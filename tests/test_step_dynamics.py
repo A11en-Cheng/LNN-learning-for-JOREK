@@ -28,7 +28,7 @@ class _Encoder(nn.Module):
         super().__init__()
         self.dummy = nn.Parameter(torch.zeros(1))
 
-    def forward(self, x, edge_index, pos):
+    def forward(self, x, edge_index, pos, condition=None, batch=None):
         return x[:, :4] * (self.dummy + 1.0)
 
 

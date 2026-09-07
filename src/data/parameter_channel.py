@@ -27,6 +27,7 @@ class _Spec:
     key: str | None = None
     default: Any = None
     size: int = 1
+    boolean: bool = False
 
 
 _DEFAULT_DIFFUSIVITY = [1e-5, 0.0, 0.0, 99.0, 99.0, 0.0]
@@ -55,7 +56,18 @@ _SPEC: tuple[_Spec, ...] = (
     _Spec("R_domm", "h5", key="R_domm", default=1.0),
     _Spec("sqrt_mu0_rho0", "h5", key="sqrt_mu0_rho0", default=1.0),
     _Spec("t_norm", "h5", key="t_norm", default=1.0),
+    # Scenario-discriminating namelist entries (vary across EHL-2 runs and are
+    # not transport coefficients; defaults from preset_parameters.f90).
+    _Spec("n_spi", "namelist", key="n_spi", default=0.0),
+    _Spec("pellet_density", "namelist", key="pellet_density", default=5.985e8),
+    _Spec("gamma_i_stangeby", "namelist", key="gamma_i_stangeby", default=-1e99),
+    _Spec("gamma_e_stangeby", "namelist", key="gamma_e_stangeby", default=-1e99),
+    _Spec("particlesource", "namelist", key="particlesource", default=1e-5),
+    _Spec("ellip", "namelist", key="ellip", default=1.0),
+    _Spec("bc_natural_open", "namelist", key="bc_natural_open", default=0.0, boolean=True),
 )
+
+CONDITION_DIM = sum(spec.size for spec in _SPEC)
 
 
 def _flattened_name(spec: _Spec, index: int | None = None) -> str:
@@ -111,12 +123,16 @@ def build_condition_vector(h5_handle, namelist_text: str | None = None) -> dict:
             namelist_key = spec.key
             if namelist_key in namelist:
                 raw = namelist[namelist_key]
+                if spec.boolean:
+                    truthy = str(raw).strip().lower().lstrip(".") in {"true", "t"}
+                    values, source = [1.0 if truthy else 0.0], "namelist"
+                    raw = None  # fall through to flatten below
                 if isinstance(raw, list):
                     values = list(raw[: spec.size])
                     while len(values) < spec.size:
                         values.append(spec.default[len(values)] if isinstance(spec.default, list) else 0.0)
                 else:
-                    values = [float(raw)]
+                    values = [float(raw)] if raw is not None else values
                 source = "namelist"
             else:
                 values = (
