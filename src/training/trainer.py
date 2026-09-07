@@ -30,13 +30,24 @@ class JorekTrainer:
     训练循环管理器。
     负责前向传播、损失计算、反向传播和梯度裁剪。
     """
-    def __init__(self, encoder, processor, decoder, physics_layer, criterion, lr=1e-3, clip_value=1.0):
+    def __init__(
+        self,
+        encoder,
+        processor,
+        decoder,
+        physics_layer,
+        criterion,
+        lr=1e-3,
+        clip_value=1.0,
+        dt_ref=1.0,
+    ):
         self.encoder = encoder
         self.processor = processor
         self.decoder = decoder
         self.physics_layer = physics_layer
         self.criterion = criterion
         self.clip_value = clip_value
+        self.dt_ref = float(dt_ref)
         self.hidden_state = None
         
         # 将所有模型参数传递给优化器
@@ -108,7 +119,7 @@ class JorekTrainer:
         )
         self.hidden_state = next_state
         pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
-        pred_states = batch_data.x + pred_delta * dt
+        pred_states = batch_data.x + pred_delta * (dt / self.dt_ref)
         
         # 4. 计算损失
         from src.models.loss import compute_spatial_weights
@@ -174,7 +185,7 @@ class JorekTrainer:
             )
             self.hidden_state = next_state
             pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
-            pred_states = batch_data.x + pred_delta * dt
+            pred_states = batch_data.x + pred_delta * (dt / self.dt_ref)
             
             from src.models.loss import compute_spatial_weights
             spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
@@ -237,7 +248,7 @@ class JorekTrainer:
                 pred_delta, pred_p = self.decoder(
                     next_latent, batch.edge_index, batch.batch, batch.pos
                 )
-                pred_states = batch.x + pred_delta * dt
+                pred_states = batch.x + pred_delta * (dt / self.dt_ref)
                 spatial_weights = compute_spatial_weights(
                     batch.x[:, 0], batch.batch, axis_weight=10.0, pedestal_weight=5.0
                 )

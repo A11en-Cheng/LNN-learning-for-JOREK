@@ -77,12 +77,14 @@ class _RecordingProcessor(nn.Module):
         return latent_x * (self.dummy + 1.0), next_state
 
 
-def _make_trainer(processor=None):
+def _make_trainer(processor=None, dt_ref=1.0):
     encoder = _Encoder()
     processor = processor if processor is not None else _RecordingProcessor()
     decoder = _Decoder()
     criterion = JorekLoss()
-    return JorekTrainer(encoder, processor, decoder, None, criterion, lr=1e-3, clip_value=1.0)
+    return JorekTrainer(
+        encoder, processor, decoder, None, criterion, lr=1e-3, clip_value=1.0, dt_ref=dt_ref
+    )
 
 
 def test_step_dt_uses_t_norm_for_physical_seconds():
@@ -203,6 +205,21 @@ def test_trainer_updates_state_by_rate_times_dt():
     trainer.train_step(batch, torch.zeros(3, 9), torch.zeros(1, 1), dt=3.0)
 
     assert torch.allclose(criterion.last["pred"], batch.x + 2.0 * 3.0)
+
+
+def test_trainer_scales_rate_by_dt_over_dt_ref():
+    encoder = _Encoder()
+    processor = _RecordingProcessor()
+    decoder = _ConstantRateDecoder()
+    criterion = _RecordingCriterion()
+    trainer = JorekTrainer(
+        encoder, processor, decoder, None, criterion, lr=1e-3, dt_ref=2.0
+    )
+    batch = Batch.from_data_list([_graph(0.0)])
+
+    trainer.train_step(batch, torch.zeros(3, 9), torch.zeros(1, 1), dt=3.0)
+
+    assert torch.allclose(criterion.last["pred"], batch.x + 2.0 * (3.0 / 2.0))
 
 
 def test_cfc_output_depends_on_timespan():
