@@ -58,16 +58,22 @@ def _frames(run, n_pairs, seed):
 
 
 class _GNN(torch.nn.Module):
-    def __init__(self, in_dim, hidden=64, out_dim=5):
+    def __init__(self, in_dim, hidden=48, out_dim=5):
         super().__init__()
         self.conv1 = GATConv(in_dim, hidden, heads=2, concat=False, edge_dim=3)
         self.conv2 = GATConv(hidden, hidden, heads=2, concat=False, edge_dim=3)
+        self.node_mlp = torch.nn.Sequential(
+            torch.nn.Linear(in_dim, hidden),
+            torch.nn.SiLU(),
+            torch.nn.Linear(hidden, out_dim),
+        )
         self.head = torch.nn.Linear(hidden, out_dim)
 
     def forward(self, x, edge_index, edge_attr):
+        features = x
         x = F.silu(self.conv1(x, edge_index, edge_attr=edge_attr))
         x = F.silu(self.conv2(x, edge_index, edge_attr=edge_attr))
-        return self.head(x)
+        return self.head(x) + self.node_mlp(features)
 
 
 def _r2(target, pred):
@@ -80,12 +86,12 @@ def main():
     manifest = json.loads(Path(".scratch/model502-baseline/manifest.json").read_text())
     train_runs = [r["name"] for r in manifest["runs"] if r["split"] == "train"][:3]
     val_runs = [r["name"] for r in manifest["runs"] if r["split"] == "val"]
-    train = [g for run in train_runs for g in _frames(run, 4, seed=0)]
+    train = [g for run in train_runs for g in _frames(run, 6, seed=0)]
     val = [g for run in val_runs for g in _frames(run, 3, seed=1)]
 
     model = _GNN(in_dim=14)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    for _ in range(80):
+    for _ in range(160):
         total = torch.zeros(())
         for graph in train:
             pred = model(graph.x, graph.edge_index, graph.edge_attr)
@@ -112,4 +118,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
