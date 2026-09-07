@@ -41,6 +41,26 @@ class _Decoder(nn.Module):
         return torch.zeros(pos.shape[0], 9) * (self.dummy + 1.0), torch.zeros(1, 1)
 
 
+class _ConstantRateDecoder(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.dummy = nn.Parameter(torch.zeros(1))
+
+    def forward(self, latent, edge_index, batch, pos):
+        rate = torch.full((pos.shape[0], 9), 2.0) * (self.dummy + 1.0)
+        return rate, torch.zeros(1, 1)
+
+
+class _RecordingCriterion(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.last = None
+
+    def forward(self, pred, target, pred_p, target_p, node_weights=None, **kwargs):
+        self.last = {"pred": pred.detach().clone(), "dt": kwargs.get("dt")}
+        return pred.square().mean(), {}
+
+
 class _RecordingProcessor(nn.Module):
     def __init__(self):
         super().__init__()
@@ -170,6 +190,30 @@ def test_parser_exposes_t_norm(tmp_path):
 
     assert graph.t_norm.item() == 2.5
     assert graph.time.item() == 10.0
+
+
+def test_trainer_updates_state_by_rate_times_dt():
+    encoder = _Encoder()
+    processor = _RecordingProcessor()
+    decoder = _ConstantRateDecoder()
+    criterion = _RecordingCriterion()
+    trainer = JorekTrainer(encoder, processor, decoder, None, criterion, lr=1e-3)
+    batch = Batch.from_data_list([_graph(0.0)])
+
+    trainer.train_step(batch, torch.zeros(3, 9), torch.zeros(1, 1), dt=3.0)
+
+    assert torch.allclose(criterion.last["pred"], batch.x + 2.0 * 3.0)
+
+
+def test_cfc_output_depends_on_timespan():
+    processor = JorekLNNProcessor(latent_dim=4, hidden_size=6)
+    x = torch.randn(3, 4)
+
+    with torch.no_grad():
+        out_short, _ = processor(x, state=None, time_steps=torch.tensor(0.1))
+        out_long, _ = processor(x, state=None, time_steps=torch.tensor(2.0))
+
+    assert not torch.allclose(out_short, out_long)
 
 
 def test_real_frames_multihorizon_forward_backward_finite():

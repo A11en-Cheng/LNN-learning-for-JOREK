@@ -12,7 +12,8 @@ def _silu_block(conv, norm, x, edge_index, edge_attr):
 class JorekGNNDecoder(nn.Module):
     """
     Reconstruction (GNN Decoder) - Split Architecture:
-    将 LNN 处理后的潜在状态解码回网格节点，预测 Model 502 的 9 场残差。
+    将 LNN 处理后的潜在状态解码回网格节点，预测 Model 502 的 9 场残差率
+    (dx/dt)。调用方按 ``x_{t+1} = x_t + rate * dt`` 更新状态。
     采用双头架构 (Split Decoder)：
     - Head 1 (smooth/electromagnetic): psi, Phi, Z_j, omega, v_parallel
     - Head 2 (thermodynamic/impurity): rho, T_i, rho_imp, T_e

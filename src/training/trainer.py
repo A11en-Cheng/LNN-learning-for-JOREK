@@ -108,7 +108,7 @@ class JorekTrainer:
         )
         self.hidden_state = next_state
         pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
-        pred_states = batch_data.x + pred_delta
+        pred_states = batch_data.x + pred_delta * dt
         
         # 4. 计算损失
         from src.models.loss import compute_spatial_weights
@@ -174,7 +174,7 @@ class JorekTrainer:
             )
             self.hidden_state = next_state
             pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
-            pred_states = batch_data.x + pred_delta
+            pred_states = batch_data.x + pred_delta * dt
             
             from src.models.loss import compute_spatial_weights
             spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
@@ -237,7 +237,7 @@ class JorekTrainer:
                 pred_delta, pred_p = self.decoder(
                     next_latent, batch.edge_index, batch.batch, batch.pos
                 )
-                pred_states = batch.x + pred_delta
+                pred_states = batch.x + pred_delta * dt
                 spatial_weights = compute_spatial_weights(
                     batch.x[:, 0], batch.batch, axis_weight=10.0, pedestal_weight=5.0
                 )

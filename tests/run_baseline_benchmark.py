@@ -127,7 +127,8 @@ def evaluate_rollout(
                 latent, current.batch, state=state, time_steps=physical_dt(warmup + h)
             )
             delta, _ = decoder(next_latent, current.edge_index, current.batch, current.pos)
-            pred = current.x + delta
+            dt_step = physical_dt(warmup + h)
+            pred = current.x + delta * dt_step
             for field_index, name in enumerate(FIELD_NAMES):
                 model_rmse[name].append(
                     float((pred[:, field_index] - target.x[:, field_index]).square().mean().sqrt().item())
