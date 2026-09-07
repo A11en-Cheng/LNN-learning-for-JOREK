@@ -222,3 +222,23 @@ def step_dt_seconds(batch_a, batch_b) -> torch.Tensor:
     if torch.any(dt <= 0):
         raise ValueError("non-monotonic frame time: dt must be strictly positive")
     return dt
+
+
+def step_dt_jorek(batch_a, batch_b) -> torch.Tensor:
+    """Per-graph step size in JOREK time units (``dt = time_b - time_a``).
+
+    Model-internal time uses JOREK units so the rate update ``x + rate * dt``
+    keeps gradients at O(1); physical seconds are ``dt * t_norm`` and only used
+    at the physics boundary (projection alignment, PDE residuals, reports).
+    """
+    for name, batch in (("batch_a", batch_a), ("batch_b", batch_b)):
+        if not hasattr(batch, "time"):
+            raise ValueError(f"{name} must carry the 'time' graph attribute")
+    time_a = batch_a.time.reshape(-1)
+    time_b = batch_b.time.reshape(-1)
+    if time_a.numel() != time_b.numel():
+        raise ValueError("time alignment mismatch between consecutive batches")
+    dt = time_b - time_a
+    if torch.any(dt <= 0):
+        raise ValueError("non-monotonic frame time: dt must be strictly positive")
+    return dt

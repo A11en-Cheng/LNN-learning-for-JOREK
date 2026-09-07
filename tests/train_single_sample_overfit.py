@@ -25,7 +25,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from torch_geometric.data import Batch
 
-from src.data.dataset import step_dt_seconds
+from src.data.dataset import step_dt_jorek
 from src.data.jorek_h5_parser import JorekDataParser
 from src.models.gnn_decoder import JorekGNNDecoder
 from src.models.gnn_encoder import JorekGNNEncoder
@@ -106,11 +106,9 @@ def run_single_sample_overfit(
         for graph in sequence
     ]
     criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.0, lambda_phys=0.0)
-    dt = float(step_dt_seconds(sequence[0], sequence[1]).mean().item())
-    dt_ref = dt
+    dt = float(step_dt_jorek(sequence[0], sequence[1]).mean().item())
     trainer = JorekTrainer(
         encoder, processor, decoder, None, criterion, lr=lr, clip_value=1.0,
-        dt_ref=dt_ref,
     )
     target_p = torch.zeros(1, 1, device=device)
 

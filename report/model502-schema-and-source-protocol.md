@@ -29,12 +29,12 @@ data-quality event: the transform clamps them for numerical safety, but the
 loader/ingestion report must count and explain them.
 
 The decoder returns a normalized residual **rate** `rate_x [nodes, 9]`; update
-a state only as `x_{t+1} = x_t + rate_x * dt / dt_ref`, where `dt` is the
-physical seconds between the two frames and `dt_ref` is a reference step
-(mean training frame step, stored with the checkpoint) used to keep training
-gradients at O(1).  Physical `dt` is also passed separately
-to the LNN and PDE diagnostics. A five-field checkpoint is incompatible
-and must not be silently loaded.
+a state only as `x_{t+1} = x_t + rate_x * dt`, where `dt` is the step in
+**JOREK time units** (`time_b - time_a`).  The model's internal time is JOREK
+time so the rate has O(1) gradients without any reference-step statistic;
+physical seconds are `dt * t_norm` and are used only at the physics boundary
+(projection alignment, PDE residuals, physical reports).  A five-field
+checkpoint is incompatible and must not be silently loaded.
 
 ## 2. Conditions
 

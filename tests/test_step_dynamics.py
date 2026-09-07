@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch_geometric.data import Batch, Data
 
-from src.data.dataset import step_dt_seconds
+from src.data.dataset import step_dt_jorek, step_dt_seconds
 from src.data.jorek_h5_parser import JorekDataParser
 from src.models.lnn_processor import JorekLNNProcessor
 from src.models.loss import JorekLoss
@@ -77,14 +77,12 @@ class _RecordingProcessor(nn.Module):
         return latent_x * (self.dummy + 1.0), next_state
 
 
-def _make_trainer(processor=None, dt_ref=1.0):
+def _make_trainer(processor=None):
     encoder = _Encoder()
     processor = processor if processor is not None else _RecordingProcessor()
     decoder = _Decoder()
     criterion = JorekLoss()
-    return JorekTrainer(
-        encoder, processor, decoder, None, criterion, lr=1e-3, clip_value=1.0, dt_ref=dt_ref
-    )
+    return JorekTrainer(encoder, processor, decoder, None, criterion, lr=1e-3, clip_value=1.0)
 
 
 def test_step_dt_uses_t_norm_for_physical_seconds():
@@ -102,6 +100,23 @@ def test_step_dt_rejects_non_monotonic_time():
 
     with __import__("pytest").raises(ValueError, match="monotonic"):
         step_dt_seconds(batch_a, batch_b)
+
+
+def test_step_dt_jorek_units_is_time_difference():
+    batch_a = Batch.from_data_list([_graph(10.0), _graph(20.0)])
+    batch_b = Batch.from_data_list([_graph(12.0), _graph(24.0)])
+
+    dt = step_dt_jorek(batch_a, batch_b)
+
+    assert torch.allclose(dt, torch.tensor([2.0, 4.0]))
+
+
+def test_step_dt_jorek_rejects_non_monotonic_time():
+    with __import__("pytest").raises(ValueError, match="monotonic"):
+        step_dt_jorek(
+            Batch.from_data_list([_graph(10.0)]),
+            Batch.from_data_list([_graph(9.0)]),
+        )
 
 
 def test_trainer_carries_hidden_state_across_steps():
@@ -205,21 +220,6 @@ def test_trainer_updates_state_by_rate_times_dt():
     trainer.train_step(batch, torch.zeros(3, 9), torch.zeros(1, 1), dt=3.0)
 
     assert torch.allclose(criterion.last["pred"], batch.x + 2.0 * 3.0)
-
-
-def test_trainer_scales_rate_by_dt_over_dt_ref():
-    encoder = _Encoder()
-    processor = _RecordingProcessor()
-    decoder = _ConstantRateDecoder()
-    criterion = _RecordingCriterion()
-    trainer = JorekTrainer(
-        encoder, processor, decoder, None, criterion, lr=1e-3, dt_ref=2.0
-    )
-    batch = Batch.from_data_list([_graph(0.0)])
-
-    trainer.train_step(batch, torch.zeros(3, 9), torch.zeros(1, 1), dt=3.0)
-
-    assert torch.allclose(criterion.last["pred"], batch.x + 2.0 * (3.0 / 2.0))
 
 
 def test_cfc_output_depends_on_timespan():

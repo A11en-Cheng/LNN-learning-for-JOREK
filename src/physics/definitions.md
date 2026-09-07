@@ -185,3 +185,19 @@
 * 8: T_e (电子温度) —— Log-Space $\to$ log1p
 
 过往训练采用5通道数据进行训练；但根据 `Model 502` 的物理定义，完整的状态空间应包含上述8个通道。未来训练计划逐步引入 `rho_imp` 和 `T_e` 以满足 `Model 502` 的双温闭合要求。
+
+## 8. Model 502 归一化（JOREK 源码依据，2026-09-07 核实）
+
+以下关系取自 JOREK 源码 `models/mod_atomic_coeff_deuterium.f90:65-66` 与
+`communication/mod_export_restart.f90`，是 pipeline 内部单位换算的权威来源：
+
+- 密度：`rho_norm = central_density * 1e20 * central_mass * ATOMIC_MASS_UNIT` [kg/m^3]；
+  `rho_SI = rho_norm * rho_JOREK`。
+- 时间：`t_norm = sqrt(mu0 * rho_norm)` [s]；`t_SI = t_norm * t_now`。
+- 速度：`v_norm = 1 / t_norm`（marker_spi_source.f90 的换算约定）。
+- 每帧 HDF5 同时写出 `sqrt_mu0_rho0`（= t_norm）与 `sqrt_mu0_over_rho0`（= 1/t_norm），
+  以及 `central_density/central_mass/F0/R_domm`，可用于量纲重建。
+- 模型内部时间统一用 JOREK 单位（`dt = t_now_{n+1} - t_now_n`）；物理秒只在投影时间对齐、
+  PDE 残差与外部报告处使用（乘 `t_norm`）。
+- COCOS 符号约定只作用于 IMAS 导出接口（`communication/IMAS/mod_jorek2IMAS.f90` 的
+  `fact_psi/fact_w/fact_phi/fact_zj`），不影响内部九场与源项的数值。

@@ -16,6 +16,7 @@ import h5py
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.data_manifest import aligned_frames
+from src.data.dataset import step_dt_jorek
 from src.data.jorek_h5_parser import JorekDataParser
 from src.data.model502_schema import (
     FIELD_NAMES,
@@ -35,7 +36,6 @@ def evaluate_rollout(
     run_name,
     warmup,
     horizon,
-    dt_ref=1.0,
     data_root="data/EHL-2",
     device="cpu",
 ) -> dict:
@@ -96,9 +96,10 @@ def evaluate_rollout(
             ).to(device)
         )
 
-    def physical_dt(index: int) -> float:
-        dt_jorek = norm_frames[index + 1].time[0].item() - norm_frames[index].time[0].item()
-        return float(dt_jorek * norm_frames[index].t_norm[0].item())
+    def frame_dt(index: int) -> float:
+        return float(
+            step_dt_jorek(norm_frames[index], norm_frames[index + 1]).mean().item()
+        )
 
     state = None
     with torch.no_grad():
@@ -108,7 +109,7 @@ def evaluate_rollout(
                 batch.x, batch.edge_index, batch.pos,
                 condition=getattr(batch, "condition", None), batch=batch.batch,
             )
-            _, state = processor(latent, batch.batch, state=state, time_steps=physical_dt(index))
+            _, state = processor(latent, batch.batch, state=state, time_steps=frame_dt(index))
 
         model_rmse = {name: [] for name in FIELD_NAMES}
         persistence_rmse = {name: [] for name in FIELD_NAMES}
@@ -125,11 +126,11 @@ def evaluate_rollout(
                 condition=getattr(current, "condition", None), batch=current.batch,
             )
             next_latent, state = processor(
-                latent, current.batch, state=state, time_steps=physical_dt(warmup + h)
+                latent, current.batch, state=state, time_steps=frame_dt(warmup + h)
             )
             delta, _ = decoder(next_latent, current.edge_index, current.batch, current.pos)
-            dt_step = physical_dt(warmup + h)
-            pred = current.x + delta * (dt_step / dt_ref)
+            dt_step = frame_dt(warmup + h)
+            pred = current.x + delta * dt_step
             for field_index, name in enumerate(FIELD_NAMES):
                 model_rmse[name].append(
                     float((pred[:, field_index] - target.x[:, field_index]).square().mean().sqrt().item())
@@ -201,7 +202,6 @@ def main():
         run_name=args.run,
         warmup=args.warmup,
         horizon=args.horizon,
-        dt_ref=float(checkpoint["meta"].get("dt_ref", 1.0)),
         device=args.device,
     )
     result["checkpoint"] = args.checkpoint
