@@ -209,6 +209,7 @@ class JorekTrainer:
         target_p_disrupt,
         horizons=(1, 2, 4, 8),
         controls_list=None,
+        return_channels=False,
     ):
         """Train one window with skip-sampled horizons at their true summed dt.
 
@@ -227,6 +228,7 @@ class JorekTrainer:
 
         total_loss = torch.zeros((), dtype=torch.float32)
         pair_count = 0
+        channel_sums = {}
         for t, batch in enumerate(batch_list):
             state_t = self.hidden_state
             controls = (
@@ -257,7 +259,7 @@ class JorekTrainer:
                     batch.x[:, 0], batch.batch, axis_weight=10.0, pedestal_weight=5.0
                 )
                 criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
-                loss, _ = self.criterion(
+                loss, diagnostics = self.criterion(
                     pred_states,
                     target.x,
                     pred_p,
@@ -265,6 +267,13 @@ class JorekTrainer:
                     node_weights=spatial_weights,
                     **criterion_kwargs,
                 )
+                for key, value in diagnostics.items():
+                    if (
+                        isinstance(key, str)
+                        and key.startswith("loss_")
+                        and key not in {"loss_reg", "loss_cls", "loss_total"}
+                    ):
+                        channel_sums[key] = channel_sums.get(key, 0.0) + value
                 total_loss = total_loss + loss
                 pair_count += 1
 
@@ -277,4 +286,7 @@ class JorekTrainer:
         clip_grad_norm_(self.decoder.parameters(), self.clip_value)
         self.optimizer.step()
         self.detach_state()
+        if return_channels:
+            channel_avg = {key: value / pair_count for key, value in channel_sums.items()}
+            return float(total_loss.item()), pair_count, channel_avg
         return float(total_loss.item()), pair_count
