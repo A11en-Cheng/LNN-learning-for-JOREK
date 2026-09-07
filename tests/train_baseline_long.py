@@ -30,6 +30,29 @@ from tests.train_baseline import (
 from tests.train_baseline_diagnostics import _load_cached, _preload_times
 
 
+def _compute_channel_weights(train_windows, train_frames, args, n_sample=150):
+    """Inverse-signal per-field weights + T_i/Z_j boost, clamped to [0.5, 3]."""
+    rng = random.Random(7)
+    sm, ss = load_stats(args.manifest)
+    cm, cs = load_condition_stats(args.manifest)
+    um, us = load_source_stats(args.manifest)
+    sig = torch.zeros(9)
+    n = 0
+    for run, start in rng.sample(train_windows, min(n_sample, len(train_windows))):
+        frames = train_frames[run]
+        g0 = normalize_graph(_load_cached(run, frames[start].index, args.cache), sm, ss, cm, cs, um, us)
+        g1 = normalize_graph(_load_cached(run, frames[start + 1].index, args.cache), sm, ss, cm, cs, um, us)
+        sig += (g1.x - g0.x).square().mean(dim=0)
+        n += 1
+    sig = (sig / n).sqrt()
+    inv = 1.0 / (sig + 1e-6)
+    inv = inv / inv.mean()
+    boost = torch.ones(9)
+    boost[5] *= 1.5  # T_i
+    boost[2] *= 1.5  # Z_j
+    return (inv * boost).clamp(0.5, 3.0)
+
+
 def _monotonic_windows(run_frames, times_by_run, window):
     windows = []
     for run, frames in run_frames.items():
@@ -70,7 +93,7 @@ def _eval_loss(windows, run_frames, models, stats, args, device, sample=40):
 
 def trainer_step(encoder, processor, decoder, batches, device, args, return_channels=False):
     from src.models.loss import compute_spatial_weights
-    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.05)
+    criterion = JorekLoss(lambda_reg=1.0, lambda_cls=0.05, channel_weights=args.channel_weights)
     total = torch.zeros((), device=device)
     channel_sums = {}
     pair_count = 0
@@ -128,7 +151,9 @@ def main():
         for r, s in train_windows for i in range(args.window - 1)
     ]
     args.dt_ref = float(sorted(all_dts)[len(all_dts) // 2])
+    args.channel_weights = _compute_channel_weights(train_windows, train_frames, args)
     print(f"windows train={len(train_windows)} val={len(val_windows)} dt_ref={args.dt_ref:.3f}")
+    print("channel_weights:", [round(float(w), 2) for w in args.channel_weights])
 
     sm, ss = load_stats(args.manifest)
     cm, cs = load_condition_stats(args.manifest)
@@ -139,7 +164,11 @@ def main():
     encoder = JorekGNNEncoder(input_dim=9, hidden_dim=64, latent_dim=32, num_layers=4, edge_dim=2, checkpoint=True, condition_dim=cm.numel()).to(device)
     processor = JorekLNNProcessor(latent_dim=32, hidden_size=64).to(device)
     decoder = JorekGNNDecoder(latent_dim=32, hidden_dim=64, output_dim=9, num_layers=4, edge_dim=2, checkpoint=True).to(device)
-    trainer = JorekTrainer(encoder, processor, decoder, None, JorekLoss(lambda_reg=1.0, lambda_cls=0.05), lr=args.lr, clip_value=1.0, dt_ref=args.dt_ref)
+    trainer = JorekTrainer(
+        encoder, processor, decoder, None,
+        JorekLoss(lambda_reg=1.0, lambda_cls=0.05, channel_weights=args.channel_weights),
+        lr=args.lr, clip_value=1.0, dt_ref=args.dt_ref,
+    )
 
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
@@ -174,4 +203,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
