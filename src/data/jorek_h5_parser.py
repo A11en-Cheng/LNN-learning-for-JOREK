@@ -376,6 +376,12 @@ class JorekDataParser:
             else:
                 time_val = torch.tensor([0.0], dtype=torch.float32)
 
+            # Physical time conversion: seconds = t_now (JOREK units) * t_norm.
+            if 't_norm' in f:
+                t_norm_val = torch.tensor([float(f['t_norm'][()].item())], dtype=torch.float32)
+            else:
+                t_norm_val = torch.tensor([1.0], dtype=torch.float32)
+
             # 6. 读取归一化常数 (Normalization factors)
             # 这些常数对于物理约束和损失函数的计算至关重要
             norm_factors = {}
@@ -419,6 +425,7 @@ class JorekDataParser:
                 edge_attr=edge_attr,
                 pos=coords,
                 time=time_val,
+                t_norm=t_norm_val,
                 norm_factors=norm_factors,
                 triangles=triangles,
                 condition=condition,

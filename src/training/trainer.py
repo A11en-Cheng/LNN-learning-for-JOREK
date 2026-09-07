@@ -3,6 +3,21 @@ import torch.nn as nn
 from torch.optim import AdamW
 from torch.nn.utils import clip_grad_norm_
 from src.data.model502_schema import validate_background_source_tensor, validate_state_tensor
+from src.data.dataset import step_dt_seconds
+from src.models.loss import compute_spatial_weights
+
+
+def _detach_state_struct(state):
+    """Detach a (possibly nested) LNN state at a BPTT boundary."""
+    if state is None:
+        return None
+    if isinstance(state, (tuple, list)):
+        return tuple(
+            item.detach() if isinstance(item, torch.Tensor) else item for item in state
+        )
+    if isinstance(state, torch.Tensor):
+        return state.detach()
+    return state
 
 class JorekTrainer:
     """
@@ -16,6 +31,7 @@ class JorekTrainer:
         self.physics_layer = physics_layer
         self.criterion = criterion
         self.clip_value = clip_value
+        self.hidden_state = None
         
         # 将所有模型参数传递给优化器
         self.optimizer = AdamW(
@@ -26,13 +42,35 @@ class JorekTrainer:
             weight_decay=1e-4 # L2 正则化，防止过拟合
         )
 
-    def train_step(self, batch_data, target_states, target_p_disrupt, dt=1.0, controls=None):
+    def reset_state(self):
+        """Drop the carried LNN state; the next step starts a fresh trajectory."""
+        self.hidden_state = None
+
+    def detach_state(self):
+        """Cut the graph at a BPTT segment boundary."""
+        self.hidden_state = _detach_state_struct(self.hidden_state)
+
+    def train_step(
+        self,
+        batch_data,
+        target_states,
+        target_p_disrupt,
+        dt=1.0,
+        controls=None,
+        state=None,
+        time_steps=None,
+        detach_state_on_entry=True,
+    ):
         """
         执行单步训练。
         Args:
             batch_data: 当前时间步的 PyG Batch 数据 (包含 x, edge_index, pos, batch 等)
             target_states: 下一时间步的真实物理状态 [Total_nodes, 9]
             target_p_disrupt: 真实的破裂标签 [Batch_size, 1]
+            dt: 物理时间步（秒），同时传给 PDE 项（若 criterion 支持）
+            state: 上一个时间步的 LNN 状态；None 表示新轨迹起点
+            time_steps: 传给 CfC 的 timespan；缺省用 dt
+            detach_state_on_entry: 入口处切断携带状态的计算图（BPTT 段边界）。
         Returns:
             total_loss, reg_loss, cls_loss
         """
@@ -52,15 +90,31 @@ class JorekTrainer:
         # 3. 前向传播 (Perception -> Cognition -> Reconstruction)
         latent_features = self.encoder(batch_data.x, batch_data.edge_index, batch_data.pos)
         # Processor 现在返回 (output, hidden_state)
-        next_latent_features, _ = self.processor(latent_features, batch_data.batch, controls=controls)
+        state_in = state if state is not None else self.hidden_state
+        if detach_state_on_entry:
+            state_in = _detach_state_struct(state_in)
+        next_latent_features, next_state = self.processor(
+            latent_features,
+            batch_data.batch,
+            state=state_in,
+            time_steps=dt if time_steps is None else time_steps,
+            controls=controls,
+        )
+        self.hidden_state = next_state
         pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
         pred_states = batch_data.x + pred_delta
         
         # 4. 计算损失
         from src.models.loss import compute_spatial_weights
         spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
+        criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
         total_loss, diagnostics = self.criterion(
-            pred_states, target_states, pred_p_disrupt, target_p_disrupt, node_weights=spatial_weights
+            pred_states,
+            target_states,
+            pred_p_disrupt,
+            target_p_disrupt,
+            node_weights=spatial_weights,
+            **criterion_kwargs,
         )
         loss_reg = diagnostics.get("loss_reg", 0.0)
         loss_cls = diagnostics.get("loss_cls", 0.0)
@@ -79,7 +133,17 @@ class JorekTrainer:
         
         return total_loss.item(), float(loss_reg), float(loss_cls)
 
-    def eval_step(self, batch_data, target_states, target_p_disrupt, dt=1.0, controls=None):
+    def eval_step(
+        self,
+        batch_data,
+        target_states,
+        target_p_disrupt,
+        dt=1.0,
+        controls=None,
+        state=None,
+        time_steps=None,
+        detach_state_on_entry=True,
+    ):
         """
         执行单步评估。
         """
@@ -92,16 +156,104 @@ class JorekTrainer:
             # Processor 现在返回 (output, hidden_state)
             if controls is not None:
                 validate_background_source_tensor(controls, name="trainer controls")
-            next_latent_features, _ = self.processor(latent_features, batch_data.batch, controls=controls)
+            state_in = state if state is not None else self.hidden_state
+            if detach_state_on_entry:
+                state_in = _detach_state_struct(state_in)
+            next_latent_features, next_state = self.processor(
+                latent_features,
+                batch_data.batch,
+                state=state_in,
+                time_steps=dt if time_steps is None else time_steps,
+                controls=controls,
+            )
+            self.hidden_state = next_state
             pred_delta, pred_p_disrupt = self.decoder(next_latent_features, batch_data.edge_index, batch_data.batch, batch_data.pos)
             pred_states = batch_data.x + pred_delta
             
             from src.models.loss import compute_spatial_weights
             spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
+            criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
             total_loss, diagnostics = self.criterion(
-                pred_states, target_states, pred_p_disrupt, target_p_disrupt, node_weights=spatial_weights
+                pred_states,
+                target_states,
+                pred_p_disrupt,
+                target_p_disrupt,
+                node_weights=spatial_weights,
+                **criterion_kwargs,
             )
             loss_reg = diagnostics.get("loss_reg", 0.0)
             loss_cls = diagnostics.get("loss_cls", 0.0)
             
         return total_loss.item(), loss_reg, loss_cls, pred_states, pred_p_disrupt
+
+    def train_step_multihorizon(
+        self,
+        batch_list,
+        target_p_disrupt,
+        horizons=(1, 2, 4, 8),
+        controls_list=None,
+    ):
+        """Train one window with skip-sampled horizons at their true summed dt.
+
+        ``batch_list`` is a time-major list of PyG Batches.  For every pair
+        ``(t, t+k)`` the model takes one step with timespan
+        ``dt = sum of the per-frame dts between t and t+k`` and is compared
+        against the frame at ``t+k``.  The one-step branch (k=1) carries the LNN
+        state to the next frame; all longer horizons branch from the same state.
+        The carried state is detached at the window boundary (BPTT segment).
+        """
+        self.encoder.train()
+        self.processor.train()
+        self.decoder.train()
+        self.optimizer.zero_grad()
+        self.reset_state()
+
+        total_loss = torch.zeros((), dtype=torch.float32)
+        pair_count = 0
+        for t, batch in enumerate(batch_list):
+            state_t = self.hidden_state
+            controls = controls_list[t] if controls_list is not None else None
+            for k in horizons:
+                if t + k >= len(batch_list):
+                    continue
+                target = batch_list[t + k]
+                dt = float(step_dt_seconds(batch, target).mean().item())
+                latent = self.encoder(batch.x, batch.edge_index, batch.pos)
+                next_latent, next_state = self.processor(
+                    latent,
+                    batch.batch,
+                    state=state_t,
+                    time_steps=dt,
+                    controls=controls,
+                )
+                if k == 1:
+                    self.hidden_state = next_state
+                pred_delta, pred_p = self.decoder(
+                    next_latent, batch.edge_index, batch.batch, batch.pos
+                )
+                pred_states = batch.x + pred_delta
+                spatial_weights = compute_spatial_weights(
+                    batch.x[:, 0], batch.batch, axis_weight=10.0, pedestal_weight=5.0
+                )
+                criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
+                loss, _ = self.criterion(
+                    pred_states,
+                    target.x,
+                    pred_p,
+                    target_p_disrupt,
+                    node_weights=spatial_weights,
+                    **criterion_kwargs,
+                )
+                total_loss = total_loss + loss
+                pair_count += 1
+
+        if pair_count == 0:
+            raise ValueError("no (t, t+k) pair fits the window and horizons")
+        total_loss = total_loss / pair_count
+        total_loss.backward()
+        clip_grad_norm_(self.encoder.parameters(), self.clip_value)
+        clip_grad_norm_(self.processor.parameters(), self.clip_value)
+        clip_grad_norm_(self.decoder.parameters(), self.clip_value)
+        self.optimizer.step()
+        self.detach_state()
+        return float(total_loss.item()), pair_count

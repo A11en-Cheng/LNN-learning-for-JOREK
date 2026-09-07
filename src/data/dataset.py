@@ -200,3 +200,25 @@ def collate_temporal_graphs(batch_list):
         spatial_batches.append(batch_at_t)
         
     return spatial_batches
+
+
+def step_dt_seconds(batch_a, batch_b) -> torch.Tensor:
+    """Per-graph physical step size in seconds between two time-aligned Batches.
+
+    The parser stores ``time`` in JOREK units and ``t_norm`` (seconds per JOREK
+    time unit) per graph; the physical step is ``(t_b - t_a) * t_norm``.  This
+    is the single place that converts frame times into the dt handed to the LNN
+    timespan and the PDE residuals.
+    """
+    for name, batch in (("batch_a", batch_a), ("batch_b", batch_b)):
+        if not hasattr(batch, "time") or not hasattr(batch, "t_norm"):
+            raise ValueError(f"{name} must carry 'time' and 't_norm' graph attributes")
+    time_a = batch_a.time.reshape(-1)
+    time_b = batch_b.time.reshape(-1)
+    t_norm = batch_b.t_norm.reshape(-1)
+    if time_a.numel() != time_b.numel() or time_a.numel() != t_norm.numel():
+        raise ValueError("time alignment mismatch between consecutive batches")
+    dt = (time_b - time_a) * t_norm
+    if torch.any(dt <= 0):
+        raise ValueError("non-monotonic frame time: dt must be strictly positive")
+    return dt

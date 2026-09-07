@@ -34,7 +34,9 @@
   `jorek*.h5` 已含 `eta/visco/visco_par/tstep` 等标量；`ZK_par/ZK_perp` 与 hyper-* 仍需在 JOREK 侧补导出。
   注意 `dcoef` 是 Dommaschk 平衡位形系数，不是输运系数。
 - **tstep 与帧间 dt**：`tstep` 是每帧记录的 JOREK 内部时间步（自适应，约 0.05–5）；相邻帧的 `dt` 是多个
-  tstep 之和，实测在耦合阶段约 0.45–50，**非均匀**，必须按每步真实 dt 训练。
+  tstep 之和，实测在耦合阶段约 0.45–50，**非均匀**。物理秒 = JOREK 单位 × `t_norm`；
+  训练按每步真实 dt 进行（`step_dt_seconds`），跳采样 `(s_t, s_{t+k})` 以累计 dt 作为 CfC timespan，
+  hidden state 跨步携带、BPTT 段边界 detach（#0006）。
 - **condition vector（条件向量）**：零维参数通道（`src/data/parameter_channel.py`）输出的固定顺序向量：
   h5 标量 → run namelist（`jorek_namelist_spitest` 优先）→ JOREK 默认值（`preset_parameters.f90`）。
   缺失项以默认值填充并带 `provenance ∈ {h5, namelist, default, derived}`；消费方凭 provenance 判真伪，

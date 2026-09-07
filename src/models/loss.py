@@ -382,7 +382,16 @@ class JorekPhysicsLoss(nn.Module):
         x_phys = torch.cat([psi, Phi, z_j, omega, rho, t_i, v_par, rho_n, t_e], dim=-1)
         return x_phys
 
-    def forward(self, pred, target, graph_data, curr_state=None, boundary=None, freeboundary=None):
+    def forward(
+        self,
+        pred,
+        target,
+        graph_data,
+        curr_state=None,
+        boundary=None,
+        freeboundary=None,
+        dt=None,
+    ):
         """计算总损失（数据 + 物理 + 边界）。
 
         Args:
@@ -392,8 +401,10 @@ class JorekPhysicsLoss(nn.Module):
             curr_state: 当前时刻节点特征 [N, 9]（归一化），缺省为 graph_data.x
             boundary: 可选边界标记张量 [N]
             freeboundary: 自由边界 vs 固定边界 标志
+            dt: 覆盖构造时的物理时间步（秒）。用于非均匀时间步训练。
         """
         device = pred.device
+        step_dt = self.dt if dt is None else dt
 
         # 边界元数据
         boundary_tensor = None
@@ -502,10 +513,10 @@ class JorekPhysicsLoss(nn.Module):
             source_rho = graph_data.background_source[:, 0:1].to(
                 device=device, dtype=rho_next.dtype
             )
-        res_mass_raw = (rho_next - rho_curr) / self.dt + div_rho_v - source_rho
+        res_mass_raw = (rho_next - rho_curr) / step_dt + div_rho_v - source_rho
         
         # 乘以 dt 抵消时间量纲，除以 rho 抵消密度量纲。结果为纯小数 (Δρ/ρ)
-        res_mass = (res_mass_raw * self.dt) / (torch.abs(rho_curr) + 1e-3)
+        res_mass = (res_mass_raw * step_dt) / (torch.abs(rho_curr) + 1e-3)
         
         # --- Parallel Momentum Residual (Dimensionless Relative Error) ---
         v_dot_grad_v_par = v_R * grad_v_par[:, 0:1] + v_Z * grad_v_par[:, 1:2]
@@ -522,13 +533,13 @@ class JorekPhysicsLoss(nn.Module):
         B_dot_grad_pressure = B_R * grad_pressure[:, 0:1] + B_Z * grad_pressure[:, 1:2]
         grad_par_pressure = B_dot_grad_pressure / B_mag
         
-        res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / self.dt + v_dot_grad_v_par) + grad_par_pressure
+        res_momentum_raw = rho_next * ((v_par_next - v_par_curr) / step_dt + v_dot_grad_v_par) + grad_par_pressure
         
         # 构造参考速度：真实速度的绝对值 + 0.1 的保护底噪 (防止过零爆炸)
         v_ref = torch.abs(v_par_curr) + 0.1
         
         # 乘以 dt 抵消时间，除以 (rho * v_ref) 抵消动量密度量纲。结果为纯小数 (ΔP/P)
-        res_momentum = (res_momentum_raw * self.dt) / (torch.abs(rho_curr) * v_ref + 1e-3)
+        res_momentum = (res_momentum_raw * step_dt) / (torch.abs(rho_curr) * v_ref + 1e-3)
 
         # Core/SOL 拓扑掩膜
         zero = torch.tensor(0.0, device=device)
