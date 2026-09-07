@@ -20,3 +20,10 @@ v0（400 步、2 run）与 v1（1000 步、6 run）在两个 held-out run 上均
 增量的 56×——模型在平静段帧上输出剧烈段量级的 delta。根因更新为：状态依赖性未充分学到 +
 训练窗口相位分布偏斜（剧烈段主导）。下一步候选：#0006 的 delta 语义复核（decoder 输出改为
 rate×dt 以强制尺度一致性，并补 CfC timespan 缩放单测）+ 训练窗口按相位重采样后再重试。
+
+2026-09-07 再更新（rate+dt_ref 契约）：残差改为 rate，更新规则 `x+rate·dt/dt_ref`（dt_ref=训练帧步均值，
+随 checkpoint 保存）；修复了 dt≈4e-6 导致的梯度消失。v4（1000 步、6 run）短 horizon（10 步）漂移回到
+预登记阈值内（0.0002 vs 0.5），但逐场 RMSE 仍比 persistence 高 3-39%，无改善 horizon；100 步 horizon
+漂移重新累积至 ~9。结论：幅度偏置已修，剩余是"学出状态依赖单步动力学"的能力问题。待决杠杆：
+更长训练+LR 调度、gate 专用 horizon-1 训练、逐场损失权重、更长时序上下文、窗口相位重采样。
+gate 维持 FAIL，Phase 2/3 冻结。#0007 过拟合 gate 在新契约下重跑 PASS（99.998%、reload 5.1e-7）。

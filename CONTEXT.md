@@ -43,8 +43,9 @@
   不以值是否为 0/1.0 判断。`time_evol_theta/zeta` 是派生量，用 JOREK 同款逻辑计算（ADR-0007）。
   通道含 44 维：输运基底 + 场景判别参数（n_spi/pellet_density/gamma_*/particlesource/ellip/bc_natural_open），
   统计量由 manifest 在 train split 上计算。已接入网络：encoder 输入的逐节点加法注入（#0011）。
-- **residual rate（残差率）**：decoder 输出归一化的残差率 `rate_x = dx/dt [N,9]`；更新规则恒为
-  `x_{t+1} = x_t + rate_x * dt`（dt 为两帧间物理秒）；dt 也单独传给 LNN 与 PDE 诊断。
+- **residual rate（残差率）**：decoder 输出归一化的残差率 `rate_x [N,9]`；更新规则恒为
+  `x_{t+1} = x_t + rate_x * dt / dt_ref`（dt 为两帧间物理秒，dt_ref 为训练步长均值、随 checkpoint 保存，
+  用于让梯度保持 O(1)）；dt 也单独传给 LNN 与 PDE 诊断。
 - **monolithic baseline（单体基线）**：九场单网络（encoder/LNN/decoder），可无源训练，是 MoE 消融的唯一对照。
 - **persistence baseline（持续性基线）**：free-run 指标的下界，即“下一步 = 当前步”的预测。
 - **free-run rollout（自由推演）**：超出 teacher forcing 的自回归预测；benchmark 按 horizon 报逐场误差并与 persistence 比较。

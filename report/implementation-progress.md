@@ -29,6 +29,20 @@
   under-learned state dependence and phase-skewed training windows.  Follow-up:
   revisit the delta convention (rate × dt) and rebalance window sampling.
 
+## 2026-09-07 (end of day) — residual rate + dt_ref fix the magnitude bias, gate still open
+
+- Residual contract changed to a rate with `x_{t+1} = x_t + rate*dt/dt_ref`;
+  dt_ref is the mean training frame step stored in the checkpoint.  This fixes
+  the vanishing-gradient problem caused by dt ~ 4e-6 s.
+- v4 baseline (1000 steps, 6 runs, conditioned): short-horizon drift is back
+  inside the registered threshold (0.0002 vs 0.5), but per-field RMSE is still
+  3-39% above persistence with no improving horizon; a 100-step horizon
+  re-accumulates drift (~9).  The overfit gate re-passes under the new contract
+  (99.998% loss drop, reload 5.1e-7).
+- Open decision: which lever to pull next for the rollout gate (longer
+  training + schedule, horizon-1 training, per-field weights, longer temporal
+  context, phase-balanced windows).
+
 ## 2026-09-05 — Model 502 schema and source-interface foundation
 
 Scope authorised by the user: validate the existing project, define the
