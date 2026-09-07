@@ -16,6 +16,19 @@
 - Planned (#0014): ADAS coronal closure prototype validated against recorded
   projections, feeding the three-mode forced rollout in #0012.
 
+## 2026-09-07 (later) — conditioning wired, rollout gate still failing for a sharp reason
+
+- #0011: condition encoder at the encoder input; the zero-dim channel grew to
+  44 entries with scenario discriminators (n_spi, pellet_density, gamma_*,
+  particlesource, ellip, bc_natural_open); ablation shows distinguishable
+  responses (single-entry ~0.01-0.02, cross-run 0.04 mean |Δlatent|).
+- #0009 retry (v2, 1000 steps, 6 runs, conditioned): still fails on both
+  held-out runs (15-25% worse than persistence, drift 0.5).  One-step
+  diagnostic: predicted |Δ| is ~56x the true single-step increment on a
+  quiescent frame — the residual magnitude ignores the local state, pointing at
+  under-learned state dependence and phase-skewed training windows.  Follow-up:
+  revisit the delta convention (rate × dt) and rebalance window sampling.
+
 ## 2026-09-05 — Model 502 schema and source-interface foundation
 
 Scope authorised by the user: validate the existing project, define the
