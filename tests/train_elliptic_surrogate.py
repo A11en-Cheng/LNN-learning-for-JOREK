@@ -73,13 +73,25 @@ def main():
         x = torch.cat([d["x"][:, 0:1], d["pos"]], dim=1)  # psi, R, Z
         return Data(x=x, edge_index=d["edge_index"], edge_attr=d["edge_attr"][:, :2]), d["x"][:, 2:3]
 
+    def boundary_mask(d):
+        bnd = d.get("boundary")
+        if bnd is None:
+            return None
+        fb = d.get("freeboundary")
+        free = bool(fb.item()) if fb is not None and fb.numel() else False
+        return ((bnd > 0) & (not free)).to(device)
+
     for epoch in range(args.epochs):
         total = torch.zeros((), device=device)
         for d in train:
             g, y = graph(d)
             g = g.to(device); y = y.to(device)
             pred = model(g.x, g.edge_index, g.edge_attr)
-            total = total + F.mse_loss(pred, y)
+            loss = F.mse_loss(pred, y)
+            mask = boundary_mask(d)
+            if mask is not None and mask.any():
+                loss = loss + 10.0 * F.mse_loss(pred[mask], y[mask])
+            total = total + loss
         opt.zero_grad(); total.backward(); opt.step()
         if (epoch + 1) % 20 == 0:
             print(f"epoch {epoch+1} loss {total.item():.4e}", flush=True)
@@ -102,4 +114,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
