@@ -12,11 +12,11 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GATConv
-from src.physics.grad_ops import compute_gradient
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data.data_manifest import aligned_frames
+from src.physics.grad_ops import compute_gradient
 
 
 def _load(run, index, cache):
