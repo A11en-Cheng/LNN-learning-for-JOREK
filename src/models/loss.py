@@ -302,10 +302,13 @@ class JorekLoss(nn.Module):
             pred_bnd = pred_states[boundary_mask]
             target_bnd = target_states[boundary_mask]
             if pred_bnd.shape[0] > 0:
-                loss_bc_plasma = F.mse_loss(pred_bnd[:, 1:], target_bnd[:, 1:])
-                psi_penalty = 5.0 if freeboundary_flag else 50.0
-                loss_bc_psi = F.mse_loss(pred_bnd[:, 0], target_bnd[:, 0]) * psi_penalty
-                loss_bc = loss_bc_plasma + loss_bc_psi
+                # JOREK default (mod_boundary_conditions.f90): Dirichlet on
+                # psi/u/zj/w only; rho/Ti/Te/vpar/rhoimp are not Dirichlet by
+                # default.  psi and zj are free on a free boundary.
+                anchored = [1, 3]  # Phi(u), omega
+                if not freeboundary_flag:
+                    anchored = [0, 1, 2, 3]  # psi, Phi, Z_j, omega
+                loss_bc = F.mse_loss(pred_bnd[:, anchored], target_bnd[:, anchored])
             
         # --- 5. 总损失组合 ---
         total_loss = (

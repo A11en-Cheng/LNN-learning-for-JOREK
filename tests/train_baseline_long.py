@@ -73,7 +73,14 @@ def physics_train_step(trainer, encoder, processor, decoder, criterion, batches,
             delta, p = decoder(latent, batch.edge_index, batch.batch, batch.pos)
             pred = batch.x + delta * (dt / trainer.dt_ref)
             w = compute_spatial_weights(batch.x[:, 0], batch.batch, 10.0, 5.0)
-            loss, _ = criterion(pred, target.x, p, torch.zeros(1, 1, device=device), node_weights=w)
+            freeboundary = getattr(batch, "freeboundary", None)
+            if freeboundary is None:
+                freeboundary = True
+            loss, _ = criterion(
+                pred, target.x, p, torch.zeros(1, 1, device=device), node_weights=w,
+                batch_boundary=getattr(batch, "boundary", None),
+                freeboundary=freeboundary,
+            )
             phys = sum(
                 model502_residuals(
                     pred, batch.x, batch, dt,

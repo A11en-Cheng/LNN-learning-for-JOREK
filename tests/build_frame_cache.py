@@ -39,6 +39,8 @@ def build(cache_root="/tmp/ehl2_cache", data_root="data/EHL-2"):
                     "t_norm": graph.t_norm,
                     "condition": graph.condition,
                     "source": graph.source if hasattr(graph, "source") else None,
+                    "boundary": graph.boundary if hasattr(graph, "boundary") else None,
+                    "freeboundary": graph.freeboundary if hasattr(graph, "freeboundary") else None,
                 },
                 path,
             )
@@ -48,4 +50,3 @@ def build(cache_root="/tmp/ehl2_cache", data_root="data/EHL-2"):
 
 if __name__ == "__main__":
     build()
-

@@ -75,6 +75,8 @@ def normalize_graph(
         t_norm=graph.t_norm,
         condition=condition,
         source=source,
+        boundary=getattr(graph, "boundary", None),
+        freeboundary=getattr(graph, "freeboundary", None),
     )
 
 

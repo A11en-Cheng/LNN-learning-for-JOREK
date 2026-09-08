@@ -126,12 +126,17 @@ class JorekTrainer:
         from src.models.loss import compute_spatial_weights
         spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
         criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
+        freeboundary = getattr(batch_data, "freeboundary", None)
+        if freeboundary is None:
+            freeboundary = True
         total_loss, diagnostics = self.criterion(
             pred_states,
             target_states,
             pred_p_disrupt,
             target_p_disrupt,
             node_weights=spatial_weights,
+            batch_boundary=getattr(batch_data, "boundary", None),
+            freeboundary=freeboundary,
             **criterion_kwargs,
         )
         loss_reg = diagnostics.get("loss_reg", 0.0)
@@ -192,12 +197,17 @@ class JorekTrainer:
             from src.models.loss import compute_spatial_weights
             spatial_weights = compute_spatial_weights(batch_data.x[:, 0], batch_data.batch, axis_weight=10.0, pedestal_weight=5.0)
             criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
+            freeboundary = getattr(batch_data, "freeboundary", None)
+            if freeboundary is None:
+                freeboundary = True
             total_loss, diagnostics = self.criterion(
                 pred_states,
                 target_states,
                 pred_p_disrupt,
                 target_p_disrupt,
                 node_weights=spatial_weights,
+                batch_boundary=getattr(batch_data, "boundary", None),
+                freeboundary=freeboundary,
                 **criterion_kwargs,
             )
             loss_reg = diagnostics.get("loss_reg", 0.0)
@@ -261,12 +271,17 @@ class JorekTrainer:
                     batch.x[:, 0], batch.batch, axis_weight=10.0, pedestal_weight=5.0
                 )
                 criterion_kwargs = {"dt": dt} if hasattr(self.criterion, "dt") else {}
+                freeboundary = getattr(batch, "freeboundary", None)
+                if freeboundary is None:
+                    freeboundary = True
                 loss, diagnostics = self.criterion(
                     pred_states,
                     target.x,
                     pred_p,
                     target_p_disrupt,
                     node_weights=spatial_weights,
+                    batch_boundary=getattr(batch, "boundary", None),
+                    freeboundary=freeboundary,
                     **criterion_kwargs,
                 )
                 for key, value in diagnostics.items():
