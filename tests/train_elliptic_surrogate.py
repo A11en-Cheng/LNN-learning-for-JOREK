@@ -25,9 +25,9 @@ def _load(run, index, cache):
 
 
 class _Head(torch.nn.Module):
-    def __init__(self, hidden=128):
+    def __init__(self, in_dim=10, hidden=128):
         super().__init__()
-        self.c1 = GATConv(3, hidden, heads=2, concat=False, edge_dim=2)
+        self.c1 = GATConv(in_dim, hidden, heads=2, concat=False, edge_dim=2)
         self.c2 = GATConv(hidden, hidden, heads=2, concat=False, edge_dim=2)
         self.c3 = GATConv(hidden, hidden, heads=2, concat=False, edge_dim=2)
         self.out = torch.nn.Linear(hidden, 1)
@@ -71,8 +71,20 @@ def main():
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
     def graph(d):
-        x = torch.cat([d["x"][:, 0:1], d["pos"]], dim=1)  # psi, R, Z
-        return Data(x=x, edge_index=d["edge_index"], edge_attr=d["edge_attr"][:, :2]), d["x"][:, 2:3]
+        x = d["x"]
+        pos = d["pos"]
+        ei = d["edge_index"]
+        ea = d["edge_attr"]
+        psi = x[:, 0:1]
+        rho = x[:, 4:5]
+        ti = x[:, 5:6]
+        te = x[:, 8:9]
+        pressure = rho * (ti + te)
+        grad_p = compute_gradient(pressure.squeeze(1), ei, ea)
+        grad_ti = compute_gradient(ti.squeeze(1), ei, ea)
+        grad_te = compute_gradient(te.squeeze(1), ei, ea)
+        features = torch.cat([psi, pos, pressure, grad_p, grad_ti, grad_te], dim=1)
+        return Data(x=features, edge_index=ei, edge_attr=ea[:, :2]), x[:, 2:3]
 
     def boundary_mask(d):
         bnd = d.get("boundary")
