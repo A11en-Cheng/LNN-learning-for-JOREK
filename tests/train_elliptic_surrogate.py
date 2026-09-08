@@ -12,6 +12,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.data import Data
 from torch_geometric.nn import GATConv
+from src.physics.grad_ops import compute_gradient
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -88,9 +89,19 @@ def main():
             g = g.to(device); y = y.to(device)
             pred = model(g.x, g.edge_index, g.edge_attr)
             loss = F.mse_loss(pred, y)
-            mask = boundary_mask(d)
-            if mask is not None and mask.any():
-                loss = loss + 10.0 * F.mse_loss(pred[mask], y[mask])
+            bnd = d.get("boundary")
+            if bnd is not None:
+                bnd = bnd.to(device)
+                wall = (bnd > 0) & ((bnd & 4) == 0)
+                open_line = (bnd & 4) != 0
+                if wall.any():
+                    loss = loss + 10.0 * F.mse_loss(pred[wall], y[wall])
+                if open_line.any():
+                    full_ea = d["edge_attr"].to(device)
+                    ei = d["edge_index"].to(device)
+                    gp = compute_gradient(pred, ei, full_ea)
+                    gy = compute_gradient(y, ei, full_ea)
+                    loss = loss + 10.0 * F.mse_loss(gp[open_line], gy[open_line])
             total = total + loss
         opt.zero_grad(); total.backward(); opt.step()
         if (epoch + 1) % 20 == 0:
