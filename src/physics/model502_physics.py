@@ -77,8 +77,11 @@ def model502_residuals(state_next, state_curr, graph_data, dt, F0=1.0):
     )  # placeholder identity; full source terms deferred
     # density continuity
     div_rho_v = compute_divergence(rho * v_field[:, 0:2], edge_index, edge_attr)
+    source_rho = 0.0
+    if hasattr(graph_data, "background_source") and graph_data.background_source is not None:
+        source_rho = graph_data.background_source[:, 0]
     residuals["density"] = float(
-        ((rho_next - rho) / dt + div_rho_v).square().mean().sqrt().item()
+        (((rho_next - rho) / dt + div_rho_v - source_rho).square()).mean().sqrt().item()
     )
     # ion pressure
     div_ti_v = compute_divergence(t_i * v_field[:, 0:2], edge_index, edge_attr)
