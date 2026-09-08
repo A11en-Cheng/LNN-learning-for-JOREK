@@ -1,4 +1,4 @@
-"""Split elliptic surrogates: psi->Z_j (Grad-Shafranov) and u->omega (Laplacian)."""
+"""Grad-Shafranov surrogate: (psi, geometry) -> Z_j via GNN (#0018)."""
 
 from __future__ import annotations
 
@@ -24,9 +24,9 @@ def _load(run, index, cache):
 
 
 class _Head(torch.nn.Module):
-    def __init__(self, in_dim=3, hidden=96):
+    def __init__(self, hidden=128):
         super().__init__()
-        self.c1 = GATConv(in_dim, hidden, heads=2, concat=False, edge_dim=2)
+        self.c1 = GATConv(3, hidden, heads=2, concat=False, edge_dim=2)
         self.c2 = GATConv(hidden, hidden, heads=2, concat=False, edge_dim=2)
         self.c3 = GATConv(hidden, hidden, heads=2, concat=False, edge_dim=2)
         self.out = torch.nn.Linear(hidden, 1)
@@ -43,11 +43,11 @@ def main():
 
     p = argparse.ArgumentParser()
     p.add_argument("--cache", default="/tmp/ehl2_cache")
-    p.add_argument("--train-frames", type=int, default=80)
-    p.add_argument("--val-frames", type=int, default=16)
-    p.add_argument("--epochs", type=int, default=160)
+    p.add_argument("--train-frames", type=int, default=120)
+    p.add_argument("--val-frames", type=int, default=20)
+    p.add_argument("--epochs", type=int, default=200)
     p.add_argument("--device", default="cuda")
-    p.add_argument("--output", default="output/model502_baseline/elliptic_surrogate_split")
+    p.add_argument("--output", default="output/model502_baseline/elliptic_surrogate_zj")
     args = p.parse_args()
 
     m = json.loads(Path(".scratch/model502-baseline/manifest.json").read_text())
@@ -66,48 +66,37 @@ def main():
     train = frames(tr, args.train_frames, 0)
     val = frames(va, args.val_frames, 1)
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+    model = _Head().to(device)
+    opt = torch.optim.AdamW(model.parameters(), lr=1e-3)
 
-    def batch(d):
-        psi = torch.cat([d["x"][:, 0:1], d["pos"]], dim=1)
-        u = torch.cat([d["x"][:, 1:2], d["pos"]], dim=1)
-        return (
-            Data(x=psi, edge_index=d["edge_index"], edge_attr=d["edge_attr"][:, :2]),
-            Data(x=u, edge_index=d["edge_index"], edge_attr=d["edge_attr"][:, :2]),
-            d["x"][:, 2:3], d["x"][:, 3:4],
-        )
+    def graph(d):
+        x = torch.cat([d["x"][:, 0:1], d["pos"]], dim=1)  # psi, R, Z
+        return Data(x=x, edge_index=d["edge_index"], edge_attr=d["edge_attr"][:, :2]), d["x"][:, 2:3]
 
-    head_psi = _Head().to(device)
-    head_u = _Head().to(device)
-    opt = torch.optim.AdamW(list(head_psi.parameters()) + list(head_u.parameters()), lr=1e-3)
     for epoch in range(args.epochs):
         total = torch.zeros((), device=device)
         for d in train:
-            gpsi, gu, zj, om = batch(d)
-            gpsi = gpsi.to(device); gu = gu.to(device); zj = zj.to(device); om = om.to(device)
-            pz = head_psi(gpsi.x, gpsi.edge_index, gpsi.edge_attr)
-            pw = head_u(gu.x, gu.edge_index, gu.edge_attr)
-            total = total + F.mse_loss(pz, zj) + F.mse_loss(pw, om)
+            g, y = graph(d)
+            g = g.to(device); y = y.to(device)
+            pred = model(g.x, g.edge_index, g.edge_attr)
+            total = total + F.mse_loss(pred, y)
         opt.zero_grad(); total.backward(); opt.step()
         if (epoch + 1) % 20 == 0:
             print(f"epoch {epoch+1} loss {total.item():.4e}", flush=True)
 
-    head_psi.eval(); head_u.eval()
-    zj_p, zj_t, om_p, om_t = [], [], [], []
+    model.eval()
+    preds, targets = [], []
     with torch.no_grad():
         for d in val:
-            gpsi, gu, zj, om = batch(d)
-            gpsi = gpsi.to(device); gu = gu.to(device)
-            zj_p.append(head_psi(gpsi.x, gpsi.edge_index, gpsi.edge_attr)); zj_t.append(zj.to(device))
-            om_p.append(head_u(gu.x, gu.edge_index, gu.edge_attr)); om_t.append(om.to(device))
-    zj_p = torch.cat(zj_p); zj_t = torch.cat(zj_t); om_p = torch.cat(om_p); om_t = torch.cat(om_t)
-
-    def r2(t, pr):
-        return 1.0 - ((t - pr) ** 2).sum() / ((t - t.mean()) ** 2).sum()
-
-    report = {"Z_j_r2": float(r2(zj_t, zj_p).item()), "omega_r2": float(r2(om_t, om_p).item())}
+            g, y = graph(d)
+            g = g.to(device)
+            preds.append(model(g.x, g.edge_index, g.edge_attr)); targets.append(y.to(device))
+    preds = torch.cat(preds); targets = torch.cat(targets)
+    r2 = 1.0 - ((targets - preds) ** 2).sum() / ((targets - targets.mean()) ** 2).sum()
+    report = {"Z_j_r2": float(r2.item())}
     out = Path(args.output); out.mkdir(parents=True, exist_ok=True)
     (out / "report.json").write_text(json.dumps(report, indent=2, sort_keys=True))
-    torch.save({"head_psi": head_psi.state_dict(), "head_u": head_u.state_dict()}, out / "model.pt")
+    torch.save(model.state_dict(), out / "model.pt")
     print(json.dumps(report, indent=2, sort_keys=True))
 
 
