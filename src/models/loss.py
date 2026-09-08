@@ -167,6 +167,7 @@ class JorekLoss(nn.Module):
         node_weights=None,
         batch_boundary=None,
         freeboundary=True,
+        bc_natural_open=False,
         pde_residuals=None,
     ):
         """
@@ -192,9 +193,12 @@ class JorekLoss(nn.Module):
                 boundary_tensor = torch.tensor(batch_boundary, device=device).view(-1)
         internal_mask = None
         boundary_mask = None
+        open_line_mask = None
         if boundary_tensor is not None:
             internal_mask = (boundary_tensor == 0)
-            boundary_mask = (boundary_tensor > 0)
+            # boundary is a bitmask: bit2 (=4) marks open field lines / X-point legs.
+            open_line_mask = (boundary_tensor & 4) != 0
+            boundary_mask = boundary_tensor > 0
 
         if isinstance(freeboundary, torch.Tensor):
             freeboundary_flag = bool(int(freeboundary.view(-1)[0].item()))
