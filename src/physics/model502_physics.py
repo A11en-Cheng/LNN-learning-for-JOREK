@@ -14,6 +14,7 @@ import torch
 
 from src.physics.grad_ops import compute_divergence, compute_gradient
 from src.physics.mhd import get_magnetic_field, get_velocity_field
+from torch_geometric.utils import scatter
 from src.data.model502_schema import destandardize, inverse_transform_state
 
 
@@ -24,12 +25,38 @@ def reconstruct_derived(psi, u, pos, edge_index, edge_attr):
     if u.dim() == 2 and u.shape[1] == 1:
         u = u.squeeze(1)
     r = pos[:, 0].clamp_min(1e-8)
-    grad_psi = compute_gradient(psi, edge_index, edge_attr)
-    flux_weighted = grad_psi / (r * r).unsqueeze(1)
-    z_j = (r * r) * compute_divergence(flux_weighted, edge_index, edge_attr)
+    z_j = _delta_star_psi(psi, pos, edge_index)
     grad_u = compute_gradient(u, edge_index, edge_attr)
     omega = compute_divergence(grad_u, edge_index, edge_attr)
     return z_j.unsqueeze(1), omega.unsqueeze(1)
+
+
+def _delta_star_psi(psi, pos, edge_index, reg=1e-6):
+    """Node-local quadratic least-squares ``Delta* psi`` operator.
+
+    ``Delta* psi = d2psi/dR2 - (1/R) dpsi/dR + d2psi/dZ2`` is obtained by
+    fitting a quadratic polynomial in (dR, dZ) over each node's neighbours and
+    reading the three relevant coefficients.  Only one direction of each edge
+    is kept so the odd monomials do not cancel across symmetric neighbours.
+    """
+    psi = _scalar(psi)
+    row, col = edge_index
+    keep = row < col
+    row = row[keep]
+    col = col[keep]
+    dr = pos[col, 0] - pos[row, 0]
+    dz = pos[col, 1] - pos[row, 1]
+    r_node = pos[:, 0].clamp_min(1e-8)
+    dpsi = psi[col] - psi[row]
+    mono = torch.stack([dr, dz, dr * dr, dr * dz, dz * dz], dim=1)
+    ata = torch.einsum("ea,eb->eab", mono, mono)
+    atb = mono * dpsi.unsqueeze(1)
+    n = psi.numel()
+    ata_sum = scatter(ata, row, dim=0, dim_size=n, reduce="sum") + reg * torch.eye(5, device=psi.device).unsqueeze(0)
+    atb_sum = scatter(atb, row, dim=0, dim_size=n, reduce="sum")
+    coeff = torch.linalg.solve(ata_sum, atb_sum.unsqueeze(-1)).squeeze(-1)
+    # coeff order: [dR, dZ, dR2, dR dZ, dZ2]
+    return 2.0 * coeff[:, 2] - coeff[:, 0] / r_node + 2.0 * coeff[:, 4]
 
 
 def _scalar(x):
