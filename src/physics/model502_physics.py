@@ -99,7 +99,16 @@ def model502_residuals(state_next, state_curr, graph_data, dt, F0=1.0, stats=Non
     z_j, omega = reconstruct_derived(psi, u, pos, edge_index, edge_attr)
     grad_z_j = compute_gradient(_scalar(z_j), edge_index, edge_attr)
     grad_omega = compute_gradient(_scalar(omega), edge_index, edge_attr)
-    pressure = rho * (t_i + t_e) + rho_imp * (t_i + t_e)
+    # Two-temperature charge-state closure: n_e = rho + <Z> rho_imp,
+    # n_i = rho + rho_imp.  <Z> (Z_imp) is the recorded marker projection.
+    z_imp_src = torch.zeros_like(rho)
+    rad_sink = torch.zeros_like(rho)
+    if hasattr(graph_data, "source") and graph_data.source is not None:
+        z_imp_src = graph_data.source[:, 3:4]
+        rad_sink = graph_data.source[:, 1:2]
+    n_e = rho + z_imp_src * rho_imp
+    n_i = rho + rho_imp
+    pressure = n_i * t_i + n_e * t_e
     grad_p = compute_gradient(_scalar(pressure), edge_index, edge_attr)
     b_norm = b_field.norm(dim=1, keepdim=True).clamp_min(1e-8)
     b_hat = b_field / b_norm
@@ -135,7 +144,7 @@ def model502_residuals(state_next, state_curr, graph_data, dt, F0=1.0, stats=Non
     cond_e = zk_e * compute_divergence(grad_te, edge_index, edge_attr).unsqueeze(1)
     ohmic = eta * (z_j.squeeze(1) ** 2) / r2.squeeze(1)
     residuals["electron_pressure"] = float(
-        ((t_e_next - t_e) / dt + div_te_v + t_e * div_v - cond_e - ohmic.unsqueeze(1)).square().mean().sqrt().item()
+        ((t_e_next - t_e) / dt + div_te_v + t_e * div_v - cond_e - ohmic.unsqueeze(1) + rad_sink).square().mean().sqrt().item()
     )
     par_grad_p = (b_hat[:, 0:1] * grad_p[:, 0:1] + b_hat[:, 1:2] * grad_p[:, 1:2])
     lap_vpar = compute_divergence(compute_gradient(_scalar(v_par), edge_index, edge_attr), edge_index, edge_attr).unsqueeze(1)
