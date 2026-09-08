@@ -56,7 +56,7 @@ def _compute_channel_weights(train_windows, train_frames, args, n_sample=150):
     return weights
 
 
-def physics_train_step(trainer, encoder, processor, decoder, criterion, batches, horizons, device, lambda_phys):
+def physics_train_step(trainer, encoder, processor, decoder, criterion, batches, horizons, device, lambda_phys, stats, condition_stats):
     from src.models.loss import compute_spatial_weights
     trainer.optimizer.zero_grad()
     total = torch.zeros((), device=device)
@@ -74,7 +74,12 @@ def physics_train_step(trainer, encoder, processor, decoder, criterion, batches,
             pred = batch.x + delta * (dt / trainer.dt_ref)
             w = compute_spatial_weights(batch.x[:, 0], batch.batch, 10.0, 5.0)
             loss, _ = criterion(pred, target.x, p, torch.zeros(1, 1, device=device), node_weights=w)
-            phys = sum(model502_residuals(pred, batch.x, batch, dt).values())
+            phys = sum(
+                model502_residuals(
+                    pred, batch.x, batch, dt,
+                    stats=stats, condition_stats=condition_stats,
+                ).values()
+            )
             total = total + loss + lambda_phys * phys
             pair_count += 1
     total = total / max(pair_count, 1)
@@ -216,6 +221,7 @@ def main():
         loss = physics_train_step(
             trainer, encoder, processor, decoder, trainer.criterion,
             batches, args.horizons, device, args.lambda_phys,
+            (sm, ss), (cm, cs),
         )
         train_log.append(loss)
         if (step + 1) % args.eval_every == 0:
