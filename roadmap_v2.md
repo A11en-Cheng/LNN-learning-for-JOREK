@@ -154,10 +154,18 @@ t_k:  (u_k, p_k)
 **当前基线配方（任何新实验的对照）**
 
 ```
-cell=ltc  --input-dt  --input-deriv2  --residual  --loss-scale dynamics
-lr 3e-3 (cosine → 3e-4)   batch 32 × 20 步/epoch   1000 epoch
+cell=ltc  --input-dt  --input-deriv2  --input-condition  --residual  --loss-scale dynamics
+lr 3e-3 (cosine → 3e-4)   batch 32 × 30 步/epoch   1000 epoch
 λ_H1=0.01  λ_axis=0.3  λ_phys=0  --save-best --save-best-metric closer
 ```
+
+**数据协议（2026-10-03 起）**：单一训练 = **7 个纯 2D run 的全部窗口**训练
+（`--train-inner all`，含 inner split 标为 val/dropped 的窗口）+
+**留出 run（v400）的全部窗口**验证（`--val-source held-out`，供 `--save-best`）。
+零维参数（61 维）通过 `--input-condition` 在每个窗口接入（取传播区间起始帧，
+用训练 run 统计量标准化）。开训前硬门槛：manifest 的
+`summary.n_nonmonotonic_windows == 0`（每个窗口逐帧 `t_now` 严格递增，见
+pitfalls #60/#61）。8 折 LOO 暂缓，后续作为泛化评估再启用。
 
 **报告口径（缺一不可）**：loss / val_mse / R² / MSE / relL2 / `derr|u|` / closer / skill_pers；
 **按 dt 分桶**；**写明评测窗口集合**（`--inner val|all`）；磁轴用"真轴节点 psi 值差"。
@@ -171,9 +179,9 @@ lr 3e-3 (cosine → 3e-4)   batch 32 × 20 步/epoch   1000 epoch
 | 编号 | 目的 | 数据/命令 | 判据 |
 |---|---|---|---|
 | E0 | 复现当前基线 | 现有 manifest + 基线配方 | 与 `ltc_roll_h1_1000` 指标一致 |
-| E1 | 8 折 LOO | 现有 manifest 的 8 个 fold | 逐 run 指标分布 |
+| E1 | 8 折 LOO（暂缓） | 现有 manifest 的 8 个 fold | 逐 run 指标分布；2026-10-03 用户决定先做单一全窗口训练 |
 | E2 | 多 seed | E0 ± seed | 噪声带登记 |
-| E3 | 参数通道接入 | +61 维输入 | R²/`derr|u|` 是否改善 |
+| E3 | 参数通道接入（已并入基线） | `--input-condition`（+61 维） | R²/`derr|u|` 是否改善 |
 | E4 | shard→投影 head | Phase 2 结构 | 相对 L2 优于解析-only、预算闭合 |
 | E5 | 去教师源单步 | 教师源 vs 自生成源 A/B | 劣化 < 30% |
 | E6 | 闭环 rollout | 课程 1→2→3 | H1 不发散、指标可接受 |

@@ -475,6 +475,7 @@ class InterpolationWindowDataset(Dataset):
         cache_dir: str | Path | None = None,
         with_shards: bool = True,
         with_lap: bool = False,
+        with_condition: bool = False,
     ) -> None:
         if isinstance(manifest, (str, Path)):
             manifest = json.loads(Path(manifest).read_text(encoding="utf-8"))
@@ -487,6 +488,10 @@ class InterpolationWindowDataset(Dataset):
         # element geometry (``size``/``vertex``/``x``) and cost one div(grad) per
         # field per frame.
         self.with_lap = bool(with_lap)
+        # ``with_condition`` standardises the 61-dim zero-dimensional parameter
+        # channel with train-split statistics so the model can consume it as an
+        # input feature (physical coefficients differ between runs/scenarios).
+        self.with_condition = bool(with_condition)
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.held_out_run: str | None = None
         allowed_runs = set(runs) if runs is not None else None
@@ -527,6 +532,17 @@ class InterpolationWindowDataset(Dataset):
         condition = store.condition[frames]
         time = store.time[frames]
         dt = time[1:] - time[:-1]
+        # Fail fast on non-monotonic windows: a negative dt reaches the LTC
+        # timespan, overflows ``exp`` and turns the whole run into NaN.  The
+        # manifest builder already splits/censors such windows (pitfall #61),
+        # this guard keeps a hand-edited manifest from repeating the failure.
+        if not bool((dt > 0).all()):
+            raise ValueError(
+                f"window {record['run']}/segment {record['segment']} "
+                f"start {record['start']} contains "
+                f"{int((~(dt > 0)).sum())} non-positive dt interval(s); "
+                "the manifest is not time-monotonic"
+            )
         source = store.source[frames]
         source_available = store.source_available[frames]
         if self.with_shards:
@@ -574,6 +590,12 @@ class InterpolationWindowDataset(Dataset):
             lap_mean = torch.as_tensor(self.stats["lap_mean"], dtype=torch.float32)
             lap_std = torch.as_tensor(self.stats["lap_std"], dtype=torch.float32).clamp_min(1e-12)
             u_lap = (u_lap - lap_mean) / lap_std
+        if self.with_condition:
+            if self.stats is None or "cond_mean" not in self.stats:
+                raise ValueError("with_condition=True requires stats with cond_mean/cond_std")
+            cond_mean = torch.as_tensor(self.stats["cond_mean"], dtype=torch.float32)
+            cond_std = torch.as_tensor(self.stats["cond_std"], dtype=torch.float32).clamp_min(1e-12)
+            condition = (condition - cond_mean) / cond_std
         burn_in = int(record["burn_in"])
         loss_mask = torch.zeros(u.shape[0], dtype=torch.bool)
         loss_mask[burn_in:] = True
@@ -651,6 +673,7 @@ def compute_transform_stats(
     runs: Iterable[str] | None = None,
     *,
     with_lap: bool = False,
+    with_condition: bool = False,
 ) -> dict:
     """Train-only statistics of the transformed state and the raw source fields.
 
@@ -684,6 +707,9 @@ def compute_transform_stats(
     lap_sum = np.zeros(NUM_STATE_FIELDS, dtype=np.float64)
     lap_sumsq = np.zeros(NUM_STATE_FIELDS, dtype=np.float64)
     lap_count = 0
+    cond_sum = np.zeros(CONDITION_DIM, dtype=np.float64)
+    cond_sumsq = np.zeros(CONDITION_DIM, dtype=np.float64)
+    cond_count = 0
     # ``transform_state`` clamps the 4 positive fields at 0 before log1p, so any
     # negative raw value (JOREK numerical noise) is *not* recoverable by
     # ``inverse_transform_state``.  Track how often that happens instead of
@@ -723,6 +749,13 @@ def compute_transform_stats(
             lap_sum += lap.sum(dim=0).numpy()
             lap_sumsq += lap.square().sum(dim=0).numpy()
             lap_count += lap.shape[0]
+        if with_condition:
+            if store.condition is None:
+                raise RuntimeError("with_condition=True requires store.condition")
+            cond = store.condition.reshape(-1, CONDITION_DIM).double()
+            cond_sum += cond.sum(dim=0).numpy()
+            cond_sumsq += cond.square().sum(dim=0).numpy()
+            cond_count += cond.shape[0]
         frame_count += len(store.frames)
         available = store.source_available
         if bool(available.any()):
@@ -750,6 +783,14 @@ def compute_transform_stats(
         source_mean = source_sum / source_count
         source_var = np.clip(source_sumsq / source_count - np.square(source_mean), 0.0, None)
         source_std = np.sqrt(source_var)
+    if cond_count == 0:
+        cond_mean = np.zeros(CONDITION_DIM)
+        cond_std = np.ones(CONDITION_DIM)
+    else:
+        cond_mean = cond_sum / cond_count
+        cond_var = np.clip(cond_sumsq / cond_count - np.square(cond_mean), 0.0, None)
+        # Zero-variance channels (constant namelist entries) must not divide by 0.
+        cond_std = np.where(cond_var > 0.0, np.sqrt(cond_var), 1.0)
     return {
         "n_frames": int(frame_count),
         "n_state_values": int(count),
@@ -772,6 +813,8 @@ def compute_transform_stats(
         "lap_std": np.sqrt(
             np.clip(lap_sumsq / max(lap_count, 1) - (lap_sum / max(lap_count, 1)) ** 2, 0.0, None)
         ).tolist(),
+        "cond_mean": cond_mean.tolist(),
+        "cond_std": cond_std.tolist(),
     }
 
 

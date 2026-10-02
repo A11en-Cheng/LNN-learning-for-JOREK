@@ -35,6 +35,7 @@ from torch.utils.checkpoint import checkpoint as _checkpoint
 
 from src.data.model502_schema import NUM_MARKER_PROJECTION_FIELDS, NUM_STATE_FIELDS
 from src.data.model502_schema import destandardize, inverse_transform_state
+from src.data.parameter_channel import CONDITION_DIM
 from src.models.lnn_processor import JorekLNNProcessor, JorekLTCProcessor
 from src.physics.grad_ops import apply_gradient_operator
 
@@ -166,6 +167,26 @@ def _dt_feature(dt_nodes: torch.Tensor, dt_scale: float) -> torch.Tensor:
     return scaled.reshape(-1, 1)
 
 
+def _expand_rows(value, nodes: int, batch_index, dtype, device) -> torch.Tensor:
+    """Per-node rows ``[nodes, F]`` from a ``[F]`` or ``[B, F]`` tensor."""
+    tensor = torch.as_tensor(value, dtype=dtype, device=device)
+    if tensor.dim() == 1:
+        if batch_index is not None and nodes == int(batch_index.numel()):
+            return tensor.reshape(1, -1).expand(nodes, -1)
+        return tensor.reshape(1, -1).expand(nodes, -1)
+    if tensor.dim() != 2:
+        raise ValueError(f"cannot expand condition of shape {tuple(tensor.shape)}")
+    if tensor.shape[0] == 1 and nodes != 1:
+        return tensor.expand(nodes, -1)
+    if batch_index is not None and tensor.shape[0] == int(batch_index.max()) + 1:
+        return tensor[batch_index]
+    if tensor.shape[0] == nodes:
+        return tensor
+    raise ValueError(
+        f"cannot expand condition of shape {tuple(tensor.shape)} to {nodes} nodes"
+    )
+
+
 def deterministic_fractions(sub_steps: int, alpha: float | None = None) -> list[float]:
     """Deterministic sub-interval split used by every evaluation path.
 
@@ -207,6 +228,7 @@ def model_kwargs_from_meta(meta: dict | None, **overrides) -> dict:
         ),
         input_deriv2=bool(args.get("input_deriv2", False)),
         input_dt=bool(args.get("input_dt", False)),
+        input_condition=bool(args.get("input_condition", False)),
         feedback_deriv=bool(args.get("feedback_deriv", False)),
         residual=bool(args.get("residual", False)),
         # checkpoints written before the rewrite carry no 'cell' key and were
@@ -232,6 +254,7 @@ class CfCInterpolator(nn.Module):
         input_deriv: bool = False,
         input_deriv2: bool = False,
         input_dt: bool = False,
+        input_condition: bool = False,
         feedback_deriv: bool = False,
         deriv_fn=None,
         residual: bool = False,
@@ -259,6 +282,11 @@ class CfCInterpolator(nn.Module):
         # a 0.5-unit step vs a 250-unit one (pitfalls #48).  dt is a per-interval
         # constant, so this does not affect the semigroup property.
         self.input_dt = bool(input_dt)
+        # ``input_condition`` appends the 61-dim zero-dimensional parameter channel
+        # (standardised) of the *base* frame to the encoder input: the physical
+        # coefficients (eta, visco, D_perp, kappa_par, ...) vary between runs and
+        # scenarios, so the network must see them to generalise across runs.
+        self.input_condition = bool(input_condition)
         self.feedback_deriv = bool(feedback_deriv)
         self.deriv_fn = deriv_fn
         # ``cell="ltc"`` (default) is the closed-form LTC propagator: the cell
@@ -293,6 +321,8 @@ class CfCInterpolator(nn.Module):
             input_dim += NUM_STATE_FIELDS
         if self.input_dt:
             input_dim += 1
+        if self.input_condition:
+            input_dim += CONDITION_DIM
         self.encoder = nn.Sequential(
             nn.Linear(input_dim, latent_dim),
             nn.SiLU(),
@@ -337,6 +367,7 @@ class CfCInterpolator(nn.Module):
         deriv: torch.Tensor | None = None,
         lap: torch.Tensor | None = None,
         dt_nodes: torch.Tensor | None = None,
+        condition: torch.Tensor | None = None,
     ) -> torch.Tensor:
         if self.input_deriv:
             if deriv is None:
@@ -350,6 +381,10 @@ class CfCInterpolator(nn.Module):
             if dt_nodes is None:
                 raise ValueError("input_dt=True requires the per-node interval dt")
             state = torch.cat([state, _dt_feature(dt_nodes, self.dt_scale)], dim=-1)
+        if self.input_condition:
+            if condition is None:
+                raise ValueError("input_condition=True requires the per-node condition")
+            state = torch.cat([state, condition], dim=-1)
         return self.encoder(state)
 
     def decode(self, latent: torch.Tensor) -> torch.Tensor:
@@ -379,6 +414,7 @@ class CfCInterpolator(nn.Module):
         deriv: torch.Tensor | None = None,
         lap: torch.Tensor | None = None,
         sub_steps: int = 1,
+        condition: torch.Tensor | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor, tuple | torch.Tensor]:
         """Encode ``state``, advance one interval and decode the next field.
 
@@ -390,6 +426,8 @@ class CfCInterpolator(nn.Module):
             state, deriv, lap,
             _expand_dt(dt, state.shape[0], batch_index, state.dtype, state.device)
             if self.input_dt else None,
+            _expand_rows(condition, state.shape[0], batch_index, state.dtype, state.device)
+            if self.input_condition else None,
         )
         latent = input_latent
         steps = max(int(sub_steps), 1)
@@ -415,6 +453,7 @@ class CfCInterpolator(nn.Module):
         lap: torch.Tensor | None = None,
         num_substeps: int = 5,
         fractions=None,
+        condition: torch.Tensor | None = None,
     ) -> dict:
         """Propagate one interval and accumulate ``A = ∫ S dτ`` (trapezoid rule).
 
@@ -451,6 +490,8 @@ class CfCInterpolator(nn.Module):
             state, deriv, lap,
             _expand_dt(dt, state.shape[0], batch_index, state.dtype, state.device)
             if self.input_dt else None,
+            _expand_rows(condition, state.shape[0], batch_index, state.dtype, state.device)
+            if self.input_condition else None,
         )
         latent = input_latent
         if hidden is None:
@@ -509,6 +550,7 @@ class CfCInterpolator(nn.Module):
         deriv: torch.Tensor | None = None,
         lap: torch.Tensor | None = None,
         checkpoint: bool = False,
+        condition: torch.Tensor | None = None,
     ) -> dict:
         """Random ``S``-substep interpolation over one recorded interval.
 
@@ -533,6 +575,8 @@ class CfCInterpolator(nn.Module):
             state, deriv, lap,
             _expand_dt(dt, state.shape[0], batch_index, state.dtype, state.device)
             if self.input_dt else None,
+            _expand_rows(condition, state.shape[0], batch_index, state.dtype, state.device)
+            if self.input_condition else None,
         )
         latent = input_latent
         steps = fracs.shape[-1]
@@ -584,12 +628,14 @@ class CfCInterpolator(nn.Module):
         batch_index: torch.Tensor | None = None,
         deriv: torch.Tensor | None = None,
         lap: torch.Tensor | None = None,
+        condition: torch.Tensor | None = None,
     ) -> dict:
         """Historical ``S = 2`` split ``[alpha, 1 - alpha]`` (ADR-0013)."""
         if not 0.0 < alpha < 1.0:
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")
         return self.multi_substep(
-            state, hidden, [float(alpha), 1.0 - float(alpha)], dt, controls, batch_index, deriv, lap
+            state, hidden, [float(alpha), 1.0 - float(alpha)], dt, controls, batch_index,
+            deriv, lap, condition=condition,
         )
 
 

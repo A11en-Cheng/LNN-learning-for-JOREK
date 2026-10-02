@@ -94,6 +94,8 @@ def main() -> None:
                         help="also feed Laplacian features")
     parser.add_argument("--input-dt", action="store_true", default=None,
                         help="also feed log1p(dt)/log1p(dt_scale) to the encoder")
+    parser.add_argument("--input-condition", action="store_true", default=None,
+                        help="also feed the standardised 61-dim parameter channel")
     parser.add_argument("--feedback-deriv", action="store_true", default=None)
     parser.add_argument("--residual", action="store_true", default=None,
                         help="decoder outputs the increment")
@@ -121,12 +123,14 @@ def main() -> None:
         "residual": args.residual, "cell": args.cell, "input_deriv": args.input_deriv or None,
         "input_deriv2": args.input_deriv2, "feedback_deriv": args.feedback_deriv,
         "input_dt": args.input_dt,
+        "input_condition": args.input_condition,
         "backbone_units": args.backbone, "backbone_layers": args.backbone_layers,
         "state_dependent": args.state_dependent, "init_decay": args.init_decay,
         "target_activation": args.target_activation,
     }
     kwargs = model_kwargs_from_meta(payload.get("meta") or {}, **overrides)
     with_lap = bool(kwargs["input_deriv2"])
+    with_condition = bool(kwargs.get("input_condition", False))
     manifest = json.loads(Path(args.manifest).read_text(encoding="utf-8"))
     fold = next(r for r in manifest["folds"] if r["held_out_run"] == args.held_out)
     stores = {
@@ -136,13 +140,13 @@ def main() -> None:
     # must match the trainer: the Laplacian features are standardised with
     # train-split statistics, which only exist when with_lap=True
     stats = compute_transform_stats(
-        stores, runs=fold["train_runs"], with_lap=with_lap
+        stores, runs=fold["train_runs"], with_lap=with_lap, with_condition=with_condition
     )
     dataset = InterpolationWindowDataset(
         manifest, manifest["data_root"], runs=[args.held_out],
         inner=None if args.inner == "all" else args.inner,
         stats=stats, cache_dir=args.cache_dir, with_shards=False,
-        with_lap=with_lap,
+        with_lap=with_lap, with_condition=with_condition,
     )
     deriv_fn = None
     if kwargs["feedback_deriv"]:
@@ -222,6 +226,7 @@ def main() -> None:
         dt, source = batch["dt"][0], batch["source"][0]
         deriv = batch["u_deriv"][0] if kwargs["input_deriv"] else None
         lap_feat = batch["u_lap"][0] if kwargs["input_deriv2"] else None
+        condition = batch["condition"][0] if with_condition else None
         burn_in = int((~batch["loss_mask"][0]).sum().item())
         target_index = burn_in + args.horizon
         if target_index >= u_raw.shape[0]:
@@ -239,6 +244,7 @@ def main() -> None:
                     None if deriv is None else deriv[k],
                     None if lap_feat is None else lap_feat[k],
                     sub_steps=args.burn_in_substeps,
+                    condition=None if condition is None else condition[k],
                 )
             if args.horizon_mode == "rollout":
                 for step_index in range(burn_in, target_index):
@@ -249,6 +255,7 @@ def main() -> None:
                         dt[step_index], source[frame], None,
                         None if deriv is None else deriv[step_index],
                         None if lap_feat is None else lap_feat[step_index],
+                        condition=None if condition is None else condition[step_index],
                     )
                     prediction, hidden = out["prediction"], out["hidden"]
             else:
@@ -257,6 +264,7 @@ def main() -> None:
                     dt[burn_in:target_index].sum(), source[target_index], None,
                     None if deriv is None else deriv[burn_in],
                     None if lap_feat is None else lap_feat[burn_in],
+                    condition=None if condition is None else condition[burn_in],
                 )["prediction"]
         raw_pred = inverse_transform_state(
             destandardize(prediction, mean, std, name="prediction")

@@ -193,6 +193,7 @@ def _window_loss(
                     None if deriv is None else deriv[k],
                     None if lap_feat is None else lap_feat[k],
                     sub_steps=burn_in_substeps,
+                    condition=None if condition is None else condition[k],
                 )
             continue
         a = random.random() if alpha is None else alpha
@@ -205,6 +206,7 @@ def _window_loss(
             u[k], hidden, fractions, dt[k:target_index].sum(), controls, None,
             None if deriv is None else deriv[k],
             None if lap_feat is None else lap_feat[k],
+            condition=None if condition is None else condition[k],
         )
         hidden = out["hidden"]
         loss = loss + torch.nn.functional.mse_loss(out["prediction"], u[target_index])
@@ -263,6 +265,7 @@ def _batch_loss(
     if getattr(model, "input_deriv", False):
         deriv = batch["u_deriv"]
     lap = batch["u_lap"] if getattr(model, "input_deriv2", False) else None
+    condition = batch["condition"] if getattr(model, "input_condition", False) else None
     b, t, n, _ = u.shape
     batch_index = torch.arange(b, device=device).repeat_interleave(n)
     # The topology is per window; batch the edges by offsetting every copy so
@@ -299,10 +302,14 @@ def _batch_loss(
             controls = source[:, k + 1].reshape(b * n, -1)
             step_deriv = deriv[:, k].reshape(b * n, -1) if deriv is not None else None
             step_lap = lap[:, k].reshape(b * n, -1) if lap is not None else None
+            step_condition = (
+                condition[:, k] if condition is not None else None
+            )
             with torch.no_grad():
                 _, _, hidden = model.step(
                     u[:, k].reshape(b * n, -1), hidden, dt[:, k], controls, batch_index,
                     step_deriv, step_lap, sub_steps=burn_in_substeps,
+                    condition=step_condition,
                 )
             continue
         end = k + horizon
@@ -311,6 +318,10 @@ def _batch_loss(
         controls = source[:, end].reshape(b * n, -1)
         step_deriv = deriv[:, k].reshape(b * n, -1) if deriv is not None else None
         step_lap = lap[:, k].reshape(b * n, -1) if lap is not None else None
+        # Zero-dimensional parameters come from the *base* frame k: they are the
+        # coefficients of the state being evolved (no leakage from the target).
+        # Per-window rows [B, D]: the model expands them to nodes via batch_index.
+        step_condition = condition[:, k] if condition is not None else None
         # ``dt_span`` = the physical time from the base frame to the target frame
         # (sum of the recorded intervals in between), fed to the cell as the
         # integration span: one propagation over the whole span ("jump").
@@ -336,6 +347,10 @@ def _batch_loss(
                     deriv[:, step_index].reshape(b * n, -1) if deriv is not None else None,
                     lap[:, step_index].reshape(b * n, -1) if lap is not None else None,
                     checkpoint=sub_step_checkpoint,
+                    condition=(
+                        condition[:, step_index]
+                        if condition is not None else None
+                    ),
                 )
                 prediction, hidden = out["prediction"], out["hidden"]
             target = u[:, end].reshape(b * n, -1)
@@ -349,6 +364,7 @@ def _batch_loss(
             out = model.multi_substep(
                 u[:, k].reshape(b * n, -1), hidden, fractions, dt_span, controls,
                 batch_index, step_deriv, step_lap, checkpoint=sub_step_checkpoint,
+                condition=step_condition,
             )
             prediction = out["prediction"]
             hidden = out["hidden"]
@@ -486,6 +502,7 @@ def _evaluate(
         u, u_raw = batch["u"][0], batch["u_raw"][0]
         deriv = batch["u_deriv"][0] if getattr(model, "input_deriv", False) else None
         lap_feat = batch["u_lap"][0] if getattr(model, "input_deriv2", False) else None
+        condition = batch["condition"][0] if getattr(model, "input_condition", False) else None
         dt, source = batch["dt"][0], batch["source"][0]
         available = batch["source_available"][0]
         burn_in = int((~batch["loss_mask"][0]).sum().item())
@@ -502,6 +519,7 @@ def _evaluate(
                     None if deriv is None else deriv[k],
                     None if lap_feat is None else lap_feat[k],
                     sub_steps=burn_in_substeps,
+                    condition=None if condition is None else condition[k],
                 )
                 continue
             hidden_before = hidden
@@ -517,6 +535,7 @@ def _evaluate(
                         dt[step_index], source[frame], None,
                         None if deriv is None else deriv[step_index],
                         None if lap_feat is None else lap_feat[step_index],
+                        condition=None if condition is None else condition[step_index],
                     )
                     prediction, hidden = out["prediction"], out["hidden"]
             else:
@@ -525,6 +544,7 @@ def _evaluate(
                     dt[k:target_index].sum(), source[target_index], None,
                     None if deriv is None else deriv[k],
                     None if lap_feat is None else lap_feat[k],
+                    condition=None if condition is None else condition[k],
                 )
                 hidden = out["hidden"]
                 prediction = out["prediction"]
@@ -555,7 +575,9 @@ def _evaluate(
                                          dt[k:target_index].sum(),
                                          source[target_index], None,
                                          None if deriv is None else deriv[k],
-                                         None if lap_feat is None else lap_feat[k])["prediction"]
+                                         None if lap_feat is None else lap_feat[k],
+                                         condition=None if condition is None else condition[k],
+                                         )["prediction"]
                      for a in alphas]
                 )
                 scale = stack.mean(dim=0).norm().clamp_min(1e-12)
@@ -687,6 +709,28 @@ def main() -> None:
         help="concatenate log1p(dt)/log1p(dt_scale) to the encoder input; without it the "
         "network only meets the interval length inside the cell (pitfalls #48: the "
         "recorded cadence spans 0.5..250 JOREK units and train/eval distributions differ)",
+    )
+    parser.add_argument(
+        "--input-condition",
+        action="store_true",
+        help="concatenate the standardised 61-dim zero-dimensional parameter channel of the "
+        "base frame to the encoder input (physical coefficients eta/visco/D_perp/kappa_par "
+        "etc. differ between runs and scenarios)",
+    )
+    parser.add_argument(
+        "--train-inner",
+        choices=("train", "all"),
+        default="train",
+        help="which windows of the 7 training runs to train on: 'train' = the blocked "
+        "inner-train split only, 'all' = every window of those runs (train+val+dropped)",
+    )
+    parser.add_argument(
+        "--val-source",
+        choices=("inner-val", "held-out"),
+        default="inner-val",
+        help="what the inner validation / --save-best uses: 'inner-val' = the val windows of "
+        "the 7 training runs, 'held-out' = all windows of the held-out run (the user protocol: "
+        "7 runs for training + 1 for validation)",
     )
     parser.add_argument(
         "--feedback-deriv",
@@ -857,7 +901,7 @@ def main() -> None:
     fold = _fold_for(manifest, args.held_out)
     stats = compute_transform_stats(
         _stores(manifest, args.cache_dir), runs=fold["train_runs"],
-        with_lap=args.input_deriv2,
+        with_lap=args.input_deriv2, with_condition=args.input_condition,
     )
     field_mean = torch.tensor(stats["field_mean"], device=device)
     field_std = torch.tensor(stats["field_std"], device=device)
@@ -886,14 +930,16 @@ def main() -> None:
             f"{name}={value:.4g}" for name, value in zip(stats["field_names"], loss_weights.tolist())
         ))
     train_set = InterpolationWindowDataset(
-        manifest, manifest["data_root"], fold=fold["fold"], inner="train",
+        manifest, manifest["data_root"], fold=fold["fold"],
+        inner=("train" if args.train_inner == "train" else None),
         stats=stats, cache_dir=args.cache_dir, with_shards=False,
-        with_lap=args.input_deriv2,
+        with_lap=args.input_deriv2, with_condition=args.input_condition,
     )
     val_set = InterpolationWindowDataset(
-        manifest, manifest["data_root"], runs=[args.held_out], inner="val",
+        manifest, manifest["data_root"], runs=[args.held_out],
+        inner=("val" if args.val_source == "inner-val" else None),
         stats=stats, cache_dir=args.cache_dir, with_shards=False,
-        with_lap=args.input_deriv2,
+        with_lap=args.input_deriv2, with_condition=args.input_condition,
     )
     deriv_fn = None
     if args.feedback_deriv:
@@ -915,6 +961,7 @@ def main() -> None:
         latent_dim=args.latent, hidden_size=args.hidden, dt_scale=args.dt_scale,
         input_deriv=args.input_deriv or args.feedback_deriv or args.input_deriv2,
         input_deriv2=args.input_deriv2, input_dt=args.input_dt,
+        input_condition=args.input_condition,
         feedback_deriv=args.feedback_deriv, deriv_fn=deriv_fn, residual=args.residual,
         cell=args.cell, backbone_units=args.backbone, backbone_layers=args.backbone_layers,
         state_dependent=args.state_dependent, target_activation=args.target_activation,
@@ -1135,6 +1182,7 @@ def main() -> None:
         latent_dim=args.latent, hidden_size=args.hidden, dt_scale=args.dt_scale,
         input_deriv=args.input_deriv or args.feedback_deriv or args.input_deriv2,
         input_deriv2=args.input_deriv2, input_dt=args.input_dt,
+        input_condition=args.input_condition,
         feedback_deriv=args.feedback_deriv, deriv_fn=deriv_fn, residual=args.residual,
         cell=args.cell, backbone_units=args.backbone, backbone_layers=args.backbone_layers,
         state_dependent=args.state_dependent, target_activation=args.target_activation,
@@ -1149,23 +1197,28 @@ def main() -> None:
         u, dt, source = batch["u"][0], batch["dt"][0], batch["source"][0]
         deriv = batch["u_deriv"][0] if (args.input_deriv or args.input_deriv2) else None
         lap_feat = batch["u_lap"][0] if args.input_deriv2 else None
+        cond_feat = batch["condition"][0] if args.input_condition else None
         burn_in = int((~batch["loss_mask"][0]).sum().item())
         hidden = None
         for k in range(burn_in):
             _, _, hidden = model.step(u[k], hidden, dt[k], source[k + 1], None,
                                       None if deriv is None else deriv[k],
-                                      None if lap_feat is None else lap_feat[k])
+                                      None if lap_feat is None else lap_feat[k],
+                                      condition=None if cond_feat is None else cond_feat[k])
         out_a = model.two_substep(u[burn_in], hidden, 0.5, dt[burn_in], source[burn_in + 1],
                                   None, None if deriv is None else deriv[burn_in],
-                                  None if lap_feat is None else lap_feat[burn_in])
+                                  None if lap_feat is None else lap_feat[burn_in],
+                                  condition=None if cond_feat is None else cond_feat[burn_in])
         hidden = None
         for k in range(burn_in):
             _, _, hidden = reloaded.step(u[k], hidden, dt[k], source[k + 1], None,
                                          None if deriv is None else deriv[k],
-                                         None if lap_feat is None else lap_feat[k])
+                                         None if lap_feat is None else lap_feat[k],
+                                         condition=None if cond_feat is None else cond_feat[k])
         out_b = reloaded.two_substep(u[burn_in], hidden, 0.5, dt[burn_in], source[burn_in + 1],
                                      None, None if deriv is None else deriv[burn_in],
-                                     None if lap_feat is None else lap_feat[burn_in])
+                                     None if lap_feat is None else lap_feat[burn_in],
+                                     condition=None if cond_feat is None else cond_feat[burn_in])
         reload_exact = bool(torch.equal(out_a["prediction"], out_b["prediction"]))
 
     meta.update({

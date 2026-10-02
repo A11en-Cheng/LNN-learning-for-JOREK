@@ -1261,3 +1261,48 @@
     - 附带教训：**训练侧 inner-val MSE 在 manifest 之间不可比**
       （b10 三组 0.041–0.048，b15/b20 0.0145/0.0186，但 held-out 上 b10 更好）
       —— 不同 manifest 的 val 窗口集合不同，不能拿它跨 manifest 比较模型。
+
+60. **一个时间倒退的窗口就能把整次全窗口训练毒成 NaN（2026-10-03）**
+    - 现象：`--train-inner all` 的首跑 `allwin_cond_h1_1000` 从 epoch 1 起
+      train_mse / val 全为 NaN；复现后确认前 3 个 batch 正常、第 4 个 batch 的
+      一个窗口触发 NaN，参数本身仍是有限值。
+    - 根因：`scan_1d21_ang12_massloss_neon` 的帧链在 frame 119→120 处
+      `t_now` 从 19710.5 倒回 10621.1（疑似 restart/backup 追加），其附近
+      **12 个窗口跨越该处**；旧分块里它们全是该 run 的 val，从未进过训练，
+      而"7 run 全窗口"把它们拉进来后 `dt = -9089.4`：
+      `dt_span = Σδ` 为负 → LTC 的 `exp(-rate·timespan)` 溢出 → inf/NaN
+      → 反传把全部权重污染。
+      注意 `_dt_feature()` 对负 dt 做了 `clamp_min(0)`，所以只看 dt 特征查不出来，
+      真正致命的是区间总时长 `dt_span`。
+    - 修复（三层）：
+      ① `segment_frames()` 在非递增 `t_now` 处切段，boundary reason =
+      `time_reversal`；
+      ② `build_interp_manifest()` 逐窗检查帧时间严格递增，任何跨越点都被丢弃并计入
+      `summary.n_nonmonotonic_windows`；
+      ③ `InterpolationWindowDataset` 遇到 `dt <= 0` 直接 `raise`（fail fast，
+      不再让它有机会变成 NaN）。
+    - 重建后：989 → 977 窗（只损失那 12 个坏窗口），7-run 训练集 916 窗、
+      v400 验证 61 窗，`n_nonmonotonic_windows = 0`。
+
+61. **全窗口训练的 manifest 硬门槛（承接 #60）**
+    - 任何窗口必须满足逐帧 `t_now` 严格递增；这条与"场值可标准化、目标帧源项可用"
+      同属开训前的硬契约。
+    - 操作规范：重建 manifest 后先确认 `summary.n_nonmonotonic_windows == 0` 再开训；
+     若日志出现 `train_mse=nan` 且参数仍有限，优先检查 dt/时间轴，而不是先调
+      lr 或优化器。
+
+62. **训练日志里的 `val` 只覆盖 val 集前 12 个窗口；`closer` 选优在第一次全窗口训练里
+    选到了 epoch 34（2026-10-03）**
+    - `_evaluate()` 的 `max_windows` 默认 12：日志中的 `'windows': 60` 其实是
+      **12 个窗口 × 5 个监督区间 = 60 个区间样本**，不是 60 个窗口。
+      旧实验同样如此：`ltc_roll_h1_1000` 日志里 Phi/omega 的 val R² 一直为负
+      （ep1000 为 -1.5/-3.6），但它最终在 v400 全窗评测是 0.98/0.92。
+      ⇒ **训练中途的 val 数字不能用来判断场（尤其 Phi/omega）好坏，最终一律以
+      `eval_phase3_structure.py --inner all` 为准。**
+    - `allwin_cond_h1_1000`（916 窗 + 61 维 condition，1000 epoch）：
+      `--save-best-metric closer` 在 12 窗子集上选出的 best 停在 **epoch 34**
+      （closer 0.540，此后 966 个 epoch 再未刷新）；全窗评测里 best（R² 0.9681）
+      确实优于 final（0.9321），即 **训练后期在 held-out run 上过拟合**。
+      ⇒ 选优窗口子集的构成直接决定 checkpoint 落在哪；把 61 维 condition
+      （含 run 标识类通道）和全部 916 窗一起喂进去时，必须给选优协议配
+      held-out 全窗或至少覆盖 dt 桶的分层验证集，不能只看前 12 窗。

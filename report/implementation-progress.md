@@ -4,6 +4,62 @@ Append-only log of the interpolation-centred Model 502 route.  Newest entries
 first.  Design decisions live in `docs/adr/`; evidence records live beside this
 file; artifacts are referenced by path (they are not committed).
 
+## 2026-10-03 (训练协议改为单一全窗口训练 + 零维参数逐窗接入 + 时间倒退 NaN 事故)
+
+**用户决定（本条的出发点）**：不做 8 折 LOO；只跑**一个**训练——
+**7 个 run 的全部窗口训练 + 1 个 run（v400）验证**；并且
+**61 维零维参数必须在每个窗口都接入网络**。
+
+**落地**：
+1. 停掉 LOO（只跑到第 1 折的 ep40，产物 `output/cfc_interp/loo_*` 为残缺样本，
+   不作为结论）。训练脚本新增：
+   `--train-inner {train,all}`（`all` = 该折 7 个训练 run 的全部窗口，
+   包括分块划分里标为 val/dropped 的窗口）、`--val-source {inner-val,held-out}`
+   （`held-out` = 留出 run 的全部窗口，供 `--save-best` 使用）。
+2. `--input-condition`：`InterpolationWindowDataset` 逐帧提供 61 维
+   `condition`（`build_condition_vector`），用**训练 run 的统计量**做 z-score；
+   模型在**每个传播区间的起始帧**取该窗口的零维参数，经 `_expand_rows` 展开到
+   4125 个节点后拼进 encoder（encoder 输入 98 维 = 9 场 + 18 一阶导 +
+   9 二阶导 + 1 dt + 61 condition）。trainer 的 `_batch_loss` / `_evaluate` /
+   checkpoint-reload 三处同步传入。
+3. **事故**：全窗口首跑从 epoch 1 起全 NaN。根因 = `scan_1d21_ang12_massloss_neon`
+   帧链在 frame 119→120 处 `t_now` 从 19710.5 倒回 10621.1，附近 12 个窗口
+   跨越该处；旧划分里它们是 val、从未参与训练，全窗口训练把它们放进训练后
+   `dt = -9089.4` → 区间总时长 dt_span 为负 → LTC `exp` 溢出 → NaN。
+   详见 `report/pitfalls.md` #60/#61。
+4. **修复**（三层防御）：`segment_frames()` 在非递增 `t_now` 处切段
+   （`time_reversal`）；`build_interp_manifest()` 逐窗过滤非单调窗口并汇报
+   `summary.n_nonmonotonic_windows`；`InterpolationWindowDataset` 对 `dt<=0`
+   fail-fast。单测 `test_time_reversal_is_a_segment_boundary` 覆盖。
+5. **重建 manifest**（`.scratch/n/manifest_h5.json`，旧版备份为
+   `.scratch/n/manifest_h5_pre_timefix.json`）：989 → 977 窗，
+   `n_nonmonotonic_windows = 0`；fold-5 训练集 = 7 run 全部 **916** 窗，
+   验证 = v400 全部 **61** 窗。
+
+**结果**（修复后重跑唯一训练 `allwin_cond_h1_1000`：LTC + dt + 一/二阶导数 +
+residual + dynamics loss，cosine 3e-3→3e-4，1000 epoch × 30 步，
+`--input-condition`，训练 916 窗；评测 v400 全部 61 窗）：
+
+| checkpoint | 评测窗口 | mean R² | relL2 | closer | 真轴节点 psi 差（中位） |
+|---|---:|---:|---:|---:|---:|
+| `checkpoint_best`（epoch 34） | 61 | **0.9681** | **0.1248** | **0.5721** | 3.4e-03 |
+| `checkpoint`（epoch 1000） | 61 | 0.9321 | 0.1892 | 0.6329 | 2.8e-03 |
+
+`checkpoint_best` 逐场 R²：psi 0.9999 / Phi 0.8579 / Z_j 0.9940 / omega 0.8838 /
+rho 0.9966 / T_i 0.9991 / v_par 0.9905 / rho_imp 0.9961 / T_e 0.9951。
+final 逐场 R²：psi 0.9999 / Phi 0.8468 / Z_j 0.8992 / omega 0.6986 / rho 0.9932 /
+T_i 0.9993 / v_par 0.9606 / rho_imp 0.9928 / T_e 0.9982。
+
+**对照与判读**：旧全窗口基线 `step_s1_b10`（65 窗、无 condition、inner-train 405 窗）
+为 R² 0.9756 / relL2 0.1042 / closer 0.481；本次最好结果略低于它，但窗口集合
+（61 vs 65）与 dt 构成不同，不能直接下"condition 变差"的结论。明确的是：
+**epoch 34 到 1000 之间 held-out 全面退化**（Z_j 0.994→0.899、omega 0.884→0.699、
+v_par 0.991→0.961），说明 916 窗 + 61 维 condition 的配方在当前预算下过拟合到
+7 个训练 run；`--save-best-metric closer` 在 12 窗子集上恰好选到了早期最优点，
+但该选优口径与 held-out 全窗指标的关系需要重新设计（见 pitfalls #62）。
+下一步建议：同 manifest 的 condition on/off A/B（或只保留物理量、去掉 run 标识类
+通道），并给 916 窗配方加早停/正则后再决定是否扩大训练集。
+
 ## 2026-10-03 (阶段总结 + 物理全停/背景三源删除 + shard→投影可行性评估)
 
 **用户决定与澄清**：① 实时物理计算全部停止，工作全部走 data；② namelist 里

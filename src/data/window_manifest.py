@@ -198,6 +198,20 @@ def _numbering_gap(frames: list[FrameInfo], i: int) -> bool:
     return (frames[i].index - frames[i - 1].index) > 1.5 * step
 
 
+def _time_reversal(frames: list[FrameInfo], i: int) -> bool:
+    """True when the recorded time does not strictly increase at ``i``.
+
+    A run whose H5 chain contains a restart/backup append can jump backwards
+    (observed: ``scan_1d21_ang12_massloss_neon`` t=19710.5 -> 10621.1).  A
+    window spanning that jump has a negative ``dt``; the propagator then
+    overflows to inf/NaN and poisons the whole training run (pitfall #61).
+    """
+    old, new = frames[i - 1].t_now, frames[i].t_now
+    if not (np.isfinite(old) and np.isfinite(new)):
+        return True
+    return new <= old
+
+
 def segment_frames(
     run_name: str,
     frames: list[FrameInfo],
@@ -208,7 +222,8 @@ def segment_frames(
     """Cut a run into physically consistent segments.
 
     Boundaries: frame-numbering gaps, material coefficient changes, the SPI
-    injection time, and a change of the fragment-availability flag.
+    injection time, a change of the fragment-availability flag, and any
+    non-increasing recorded time (restart/backup append).
     """
     if not frames:
         return []
@@ -218,6 +233,8 @@ def segment_frames(
         cuts: list[str] = []
         if _numbering_gap(frames, i):
             cuts.append("frame_gap")
+        if _time_reversal(frames, i):
+            cuts.append("time_reversal")
         if _material_boundary(frames, i, rel_threshold):
             cuts.append("material")
         if (frames[i - 1].n_spi_tot > 0) != (frames[i].n_spi_tot > 0):
@@ -383,6 +400,20 @@ def build_interp_manifest(
         t_ns = injection_time(namelist_text)
         segments = segment_frames(run.name, frames, t_ns=t_ns, rel_threshold=rel_threshold)
         windows = build_windows(segments, burn_in=burn_in, horizon=horizon, stride=stride)
+        # Defensive second gate: even if segmentation ever misses a boundary,
+        # never emit a window whose recorded time is not strictly increasing.
+        # A single negative dt makes the LTC timespan negative, ``exp``
+        # overflows and the NaN propagates through the whole model (pitfall #61).
+        monotonic_windows: list[Window] = []
+        for window in windows:
+            times = [frames[k].t_now for k in window.frame_indices]
+            if all(
+                np.isfinite(a) and np.isfinite(b) and b > a
+                for a, b in zip(times, times[1:])
+            ):
+                monotonic_windows.append(window)
+        n_nonmonotonic = len(windows) - len(monotonic_windows)
+        windows = monotonic_windows
         all_segments.extend(segments)
         all_windows.extend(windows)
         run_records.append(
@@ -406,6 +437,7 @@ def build_interp_manifest(
                     for segment in segments
                 ],
                 "n_windows": len(windows),
+                "n_nonmonotonic_windows": n_nonmonotonic,
             }
         )
 
@@ -446,6 +478,9 @@ def build_interp_manifest(
             "n_runs": len(run_records),
             "n_segments": len(all_segments),
             "n_windows": len(all_windows),
+            "n_nonmonotonic_windows": int(
+                sum(record.get("n_nonmonotonic_windows", 0) for record in run_records)
+            ),
             "inner": inner_counts,
         },
     }

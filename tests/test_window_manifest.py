@@ -57,6 +57,24 @@ def test_frame_numbering_gap_is_a_segment_boundary(tmp_path):
     assert boundaries == [(0, 3), (7, 11)]
 
 
+def test_time_reversal_is_a_segment_boundary(tmp_path):
+    """A restart/backup append must not produce a window with negative dt (#61)."""
+    run_dir = tmp_path / "run_rev"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_namelist(run_dir, t_ns=None)
+    times = [0.0, 10.0, 20.0, 30.0, 40.0, 5.0, 15.0, 25.0]
+    for index, t_now in enumerate(times):
+        write_frame(run_dir, index, t_now=t_now)
+    frames = collect_frames(run_dir)
+    segments = segment_frames("run_rev", frames, t_ns=None)
+    assert [(segment.start, segment.end) for segment in segments] == [(0, 5), (5, 8)]
+    assert "time_reversal" in segments[1].boundaries
+    # No generated window may contain a non-increasing interval.
+    for window in build_windows(segments, burn_in=2, horizon=1):
+        for a, b in zip(window.frame_indices, window.frame_indices[1:]):
+            assert frames[b].t_now > frames[a].t_now
+
+
 def test_window_generation_and_blocked_embargo(tmp_path):
     run_dir = tmp_path / "run_b"
     _write_run(run_dir, 60, t_ns=None)
