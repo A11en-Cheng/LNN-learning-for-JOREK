@@ -224,3 +224,6 @@ output/
 # Local tooling and virtual environments
 .torch-cuda-env/
 .tools/
+
+# Local scratch: manifests, frame caches, run logs, figures (not repo content)
+.scratch/
