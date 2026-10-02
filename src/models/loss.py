@@ -357,10 +357,11 @@ class JorekPhysicsLoss(nn.Module):
         self.stats = stats
 
     def denormalize(self, x: torch.Tensor) -> torch.Tensor:
-        """将 Z-score + log1p 映射后的特征恢复到物理空间。
+        """将 Z-score + symlog 映射后的特征恢复到物理空间。
 
         1. 先做 Z-score 反变换: x_linear = x * std + mean
-        2. 再对 rho/T_i/rho_n/T_e 反 log1p: expm1，并做轻微 clamp，避免在 PDE 残差计算中除零。
+        2. 再对 rho/T_i/rho_n/T_e 反 symlog: sign(y)*expm1(|y|)，并做轻微 clamp，
+           避免在 PDE 残差计算中除零。
         """
         validate_state_tensor(x, name="physics-loss state")
         if self.stats is None:
@@ -378,13 +379,16 @@ class JorekPhysicsLoss(nn.Module):
         z_j = x_linear[:, 2:3]
         omega = x_linear[:, 3:4]
 
-        rho = torch.clamp(torch.expm1(x_linear[:, 4:5]), min=1e-8)
-        t_i = torch.clamp(torch.expm1(x_linear[:, 5:6]), min=1e-8)
+        def _symexp(x):
+            return torch.sign(x) * torch.expm1(x.abs())
+
+        rho = torch.clamp(_symexp(x_linear[:, 4:5]), min=1e-8)
+        t_i = torch.clamp(_symexp(x_linear[:, 5:6]), min=1e-8)
 
         v_par = x_linear[:, 6:7]
 
-        rho_n = torch.clamp(torch.expm1(x_linear[:, 7:8]), min=1e-8)
-        t_e = torch.clamp(torch.expm1(x_linear[:, 8:9]), min=1e-8)
+        rho_n = torch.clamp(_symexp(x_linear[:, 7:8]), min=1e-8)
+        t_e = torch.clamp(_symexp(x_linear[:, 8:9]), min=1e-8)
 
         x_phys = torch.cat([psi, Phi, z_j, omega, rho, t_i, v_par, rho_n, t_e], dim=-1)
         return x_phys

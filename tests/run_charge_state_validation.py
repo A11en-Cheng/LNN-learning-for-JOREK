@@ -61,7 +61,7 @@ def main():
         "z_eff_r2": float(_r2(recorded_ze, closure_ze)),
         "note": "time-dependent node-local f_Z, fixed axis (a=1,b=6), no advection",
     }
-    output = Path("output/model502_baseline/charge_state_closure/report.json")
+    output = Path("output/validation/charge_state_closure/report.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True))
     print(json.dumps(report, indent=2, sort_keys=True))
@@ -69,4 +69,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

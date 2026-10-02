@@ -84,12 +84,24 @@
 
 执行结论：凡与上表冲突的旧描述，一律按 `Model 502` 替换并弃用。
 
-## 3. 与当前 5 通道学习变量的对应关系
-当前 GNN/LNN 管线输入输出仍为 5 通道：`[psi, Phi, rho, T, v_par]`。
+## 3. 与当前 9 通道学习变量的对应关系
+当前数据契约（`src/data/model502_schema.py`，ADR-0001）为 9 通道：
+`[psi, Phi, Z_j, omega, rho, T_i, v_par, rho_imp, T_e]`。
+2026-09-29 核实：HDF5 `values` 通道顺序与内部顺序一致（`mod_model_settings.f90`：
+`var_psi=1, var_u=2, var_zj=3, ...`；`mod_export_restart.f90` 直接拷贝），
+即索引 `0..8`；仓库旧映射 `2,1,0,...` 把 psi 与 Z_j 对调，属已确认 bug，
+**已修复为 identity**（`src/data/model502_schema.py`）。
 
-在当前代码 `src/data/jorek_h5_parser.py` 中，`T` 取自 `values_raw[5]`（即 `Ti`），而 `Te` 位于 `values_raw[8]` 未并入 5 通道主状态。由此得到：
-- 训练主状态可解释为：`[psi, Phi(=u), rho, Ti, v_par]`。
-- `Model 502` 的完整双温闭合在纯 5 通道端到端训练中属于降阶近似；若要严格满足 502，需引入 `Te`（以及必要时 `rho_imp`）作为显式状态或外部闭合输入。
+`psi` 语义（源码核实）：H5 通道 0 是**当前时刻的总极向磁通状态**（GS 平衡 + 演化扰动），
+`get_psi_n(psi, Z) = (psi - ES%psi_axis) / (ES%psi_bnd - ES%psi_axis)` 直接作用于它，
+而 `ES%psi_axis/psi_bnd` 由 `bootstrap_find_minRad` 从当前 `node%values(...,var_psi)` 现场求出。
+平衡分量另有独立数据集 `psi_eq`。`eqdsk` 只在**建网格**时使用
+（`grids/grid_inside_wall.f90`、`grids/grid_utils/finish_grid.f90` 用它给新网格节点填初始 psi 与壁几何），
+重启文件已同时含 `values` 与 `psi_eq`，因此重启演化与离线 ψ_n 重建都不需要 eqdsk。
+
+- `Z_j` 与 `omega` 是椭圆派生量，但作为显式状态通道存在，可供物理残差/一致性约束使用。
+- 双温闭合需要 `T_i`、`T_e`、`rho`、`rho_imp` 同时在场；旧的 5 通道降阶
+  （`psi, Phi, rho, T_i, v_par`）只保留为历史对照，不再作为训练契约。
 
 ## 4. 物理约束 (Hard Constraints)
 模型**绝不**直接预测磁场 `B` 或速度场 `v`。必须通过以下 Ansatz 计算：
@@ -163,7 +175,7 @@
 - `mu0 = 4*pi*1e-7 Vs/(A m)`
 - `e = 1.602176565e-19 C`
 
-## 6. 当前待确认项（请你确认）
+## 6. 已确认项（2026-09 答复）
 为确保与你的 `note502` 版本逐字一致，我需要你确认两点：
 1. 本项目文档里 `rho` 是否按 `n_bg` 解释，且 `rho_imp` 是否可由现有数据稳定获得（若不可，需要在训练输入中显式新增该通道或由外部闭合提供）。
     
@@ -178,13 +190,14 @@
 * 1: Phi / u (速度流函数) —— Linear
 * 2: Z_j (环向电流密度) —— Linear
 * 3: omega (环向涡度) —— Linear
-* 4: rho (背景质量密度) —— Log-Space $\to$ log1p
-* 5: T_i (离子温度) —— Log-Space $\to$ log1p
+* 4: rho (背景质量密度) —— Symlog $\to$ sign(x)·log1p(|x|)
+* 5: T_i (离子温度) —— Symlog $\to$ sign(x)·log1p(|x|)
 * 6: v_par (平行速度) —— Linear
-* 7: rho_n / rho_imp (杂质密度) —— Log-Space $\to$ log1p
-* 8: T_e (电子温度) —— Log-Space $\to$ log1p
+* 7: rho_n / rho_imp (杂质密度) —— Symlog $\to$ sign(x)·log1p(|x|)
+* 8: T_e (电子温度) —— Symlog $\to$ sign(x)·log1p(|x|)
 
-过往训练采用5通道数据进行训练；但根据 `Model 502` 的物理定义，完整的状态空间应包含上述8个通道。未来训练计划逐步引入 `rho_imp` 和 `T_e` 以满足 `Model 502` 的双温闭合要求。
+当前训练契约使用上述 9 个通道（索引 0–8），见 `src/data/model502_schema.py` 与 ADR-0001；
+历史 5 通道约定已退役。
 
 ## 8. Model 502 归一化（JOREK 源码依据，2026-09-07 核实）
 
@@ -201,3 +214,53 @@
   PDE 残差与外部报告处使用（乘 `t_norm`）。
 - COCOS 符号约定只作用于 IMAS 导出接口（`communication/IMAS/mod_jorek2IMAS.f90` 的
   `fact_psi/fact_w/fact_phi/fact_zj`），不影响内部九场与源项的数值。
+
+## 9. 残差算子与符号约定（2026-09-09 修正，权威）
+
+本节是 `report/physics-residual-correction.md` 的结论摘要；两者冲突时以本节与代码
+（`src/physics/grad_ops.py`、`src/physics/model502_full_loss.py`）为准。
+
+### 9.1 图微分算子
+- `compute_gradient` 使用逆距离加权的 2×2 最小二乘正规方程（不是除以 `sum(1/d)`）；
+  在该 4125 节点网格上 `grad(R)` 精确到 1e-5。
+- `Delta* psi` 用 MLS `div(grad(psi))` 形式（`delta_star`）；旧的最小二乘 `Delta*`
+  因邻域不足而秩亏，已弃用。
+
+### 9.2 Poisson bracket
+轴对称 bracket 为 `{a,b} = a_R b_Z - a_Z b_R`，**不含 1/R**；柱面权重由各项显式的
+`R` 幂承担。代码入口：`poisson_bracket`。
+
+### 9.3 两个椭圆算子
+- `Z_j = Delta* psi = lap psi - psi_R / R`（方程 3）
+- `omega = Delta+ u = lap u + u_R / R`（方程 4）
+
+两者一阶项符号相反，不能互相替换（代码：`delta_star` / `delta_plus`）。
+
+### 9.4 涡度方程强形式（当前残差实现）
+
+```text
+div(R^3 rho grad du/dt) = 1/2 {R^2 |grad u|^2, R^2 rho}
+                        + {R^4 rho omega, u}
+                        + {psi, Z_j}
+                        + 2 R d p / d Z
+                        + div(visco R grad omega)
+```
+
+相对 Fortran 弱形式丢弃了 tauIC/TG/zeta/连续性修正；这些项由残差本底承担。
+
+### 9.5 存储帧符号约定
+H5 存储的 `psi`/`Z_j` 与 Fortran 内部变量相差一个整体符号；记录轨迹满足
+`{psi, Z_j} = -[R^2, p]`。因此压力项按**存储帧约定**取 `+2 R d p/d Z`，这样
+`pred = target` 才使残差最小（实测 rms 0.286，换号后 1.77）。
+
+### 9.6 残差归一化与数值保护
+- 每项残差用相对归一化 `|sum| / Σ|term|`，有界于 `[0, ~2]`，不使用 `/visco` 这类手工尺度。
+- `pred = target` 时存在不可约本底（vorticity 0.16、current_definition 0.13、
+  vorticity_definition 0.07；能量与密度残差因省略源项而接近 1.0）。验收标准是
+  "扰动单调性"，不是"本底为零"。
+- 反归一化场先经 `_clamp_physical` 限制在量级边界，残差组装用 float64，避免 float32 溢出。
+
+### 9.7 与源项的关系
+能量/密度残差的本底主要来自被省略的源项（辐射、电离、加热、平行输运）。要让这些项成为
+有效训练信号，必须把 `projections*.h5` 的五场投影
+（`dE_ion, rad_sink, Z_eff, Z_imp, N_imp`）按错步显式耦合的时间约定接入对应方程。

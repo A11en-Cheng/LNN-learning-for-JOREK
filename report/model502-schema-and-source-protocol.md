@@ -12,17 +12,23 @@ Every graph state is a float32 tensor shaped `[nodes, 9]` in this exact order:
 
 | Index | Name | HDF5 `values` index | Transform |
 |---:|---|---:|---|
-| 0 | `psi` | 2 | linear, Z-score |
+| 0 | `psi` | 0 | linear, Z-score |
 | 1 | `Phi` (`u`) | 1 | linear, Z-score |
-| 2 | `Z_j` | 0 | linear, Z-score |
+| 2 | `Z_j` | 2 | linear, Z-score |
 | 3 | `omega` | 3 | linear, Z-score |
-| 4 | `rho` | 4 | `log1p(clamp(x, 0))`, Z-score |
-| 5 | `T_i` | 5 | `log1p(clamp(x, 0))`, Z-score |
+| 4 | `rho` | 4 | `symlog = sign(x)·log1p(|x|)`, Z-score |
+| 5 | `T_i` | 5 | `symlog = sign(x)·log1p(|x|)`, Z-score |
 | 6 | `v_par` | 6 | linear, Z-score |
-| 7 | `rho_imp` | 7 | `log1p(clamp(x, 0))`, Z-score |
-| 8 | `T_e` | 8 | `log1p(clamp(x, 0))`, Z-score |
+| 7 | `rho_imp` | 7 | `symlog = sign(x)·log1p(|x|)`, Z-score |
+| 8 | `T_e` | 8 | `symlog = sign(x)·log1p(|x|)`, Z-score |
 
 Statistics are computed only on the training split after the stated transform.
+
+> Correction 2026-09-29: the HDF5 `values` channel order is the model502
+> internal order (`mod_model_settings.f90`: `var_psi=1, var_u=2, var_zj=3, ...`)
+> and `mod_export_restart.f90` copies it directly; the table above now uses the
+> identity mapping.  The previous psi=2 / Z_j=0 rows came from a wrong
+> permutation in `src/data/model502_schema.py`, which swapped psi and Z_j.
 The checkpoint must record the schema version, field names, train-split ID,
 mean and standard deviation.  Negative values in positive-only channels are a
 data-quality event: the transform clamps them for numerical safety, but the

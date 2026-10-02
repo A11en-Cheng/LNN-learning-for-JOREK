@@ -65,6 +65,34 @@ _SPEC: tuple[_Spec, ...] = (
     _Spec("particlesource", "namelist", key="particlesource", default=1e-5),
     _Spec("ellip", "namelist", key="ellip", default=1.0),
     _Spec("bc_natural_open", "namelist", key="bc_natural_open", default=0.0, boolean=True),
+    # --- transport-closure parameters (appended; existing indices stay stable) ---
+    # JOREK applies the *capped, temperature-dependent* parallel conduction:
+    #   ZK_par_T = ZK_par * (T_corr/T_0)**2.5, clipped to [neg branch, ZK_par_max]
+    # (models/model502/mod_elt_matrix.f90:717-740).  Without ZK_par_max our
+    # residuals were 17x/410x too stiff (pitfalls #38).
+    _Spec("ZK_par_max", "namelist", key="zk_par_max", default=1.0e4),
+    _Spec("ZKpar_T_dependent", "namelist", key="zkpar_t_dependent", default=0.0, boolean=True),
+    _Spec("Ti_min_ZKpar", "namelist", key="ti_min_zkpar", default=0.0),
+    _Spec("Te_min_ZKpar", "namelist", key="te_min_zkpar", default=0.0),
+    _Spec("T_min", "namelist", key="t_min", default=3.2085e-4),
+    _Spec("T_min_neg", "namelist", key="t_min_neg", default=3.2425e-4),
+    _Spec("rho_min", "namelist", key="rho_min", default=1.0e-3),
+    _Spec("rho_min_neg", "namelist", key="rho_min_neg", default=1.0e-3),
+    _Spec("ZK_e_par_neg", "namelist", key="zk_e_par_neg", default=1.5e2),
+    _Spec("ZK_i_par_neg", "namelist", key="zk_i_par_neg", default=2.4e1),
+    _Spec("D_par", "namelist", key="d_par", default=5.0e-2),
+    _Spec("D_par_imp", "namelist", key="d_par_imp", default=5.0e-2),
+    # --- boundary-condition flags (needed to interpret/implement the operators) ---
+    # freeboundary lives in the H5; the open-boundary flag and wall model are
+    # namelist inputs.  ``bc_natural_open = .t.`` means the open boundary uses a
+    # natural (Neumann) condition, which is exactly what our weak-form operators
+    # assume (the boundary flux term vanishes); the wall/limiter nodes carry the
+    # fixed-boundary conditions and must be masked or constrained explicitly.
+    _Spec("freeboundary", "h5", key="freeboundary", default=0.0, boolean=True),
+    _Spec("resistive_wall", "namelist", key="resistive_wall", default=0.0, boolean=True),
+    _Spec("bc_natural_open", "namelist", key="bc_natural_open", default=1.0, boolean=True),
+    _Spec("n_open", "namelist", key="n_open", default=0.0),
+    _Spec("n_limiter", "namelist", key="n_limiter", default=0.0),
 )
 
 CONDITION_DIM = sum(spec.size for spec in _SPEC)
@@ -102,7 +130,13 @@ def build_condition_vector(h5_handle, namelist_text: str | None = None) -> dict:
     namelist = parse_namelist(namelist_text) if namelist_text else {}
 
     def h5_value(key: str) -> float:
-        return float(h5_handle[key][()].item())
+        raw = h5_handle[key][()]
+        try:
+            return float(raw.item() if hasattr(raw, "item") else raw)
+        except (TypeError, ValueError):
+            # HDF5 stores logicals as the characters 'T'/'F'.
+            text = raw if isinstance(raw, str) else raw.tobytes().decode(errors="ignore")
+            return 1.0 if text.strip().strip(".").lower() in {"true", "t"} else 0.0
 
     names: list[str] = []
     vector: list[float] = []
@@ -114,17 +148,15 @@ def build_condition_vector(h5_handle, namelist_text: str | None = None) -> dict:
         if spec.source == "derived":
             values = [theta if spec.name == "time_evol_theta" else zeta]
             source = "derived"
-        elif spec.source == "h5":
-            if spec.key in h5_handle:
-                values, source = [h5_value(spec.key)], "h5"
-            else:
-                values, source = [spec.default], "default"
+        elif spec.key in h5_handle:
+            # Priority chain: H5 first, then namelist, then the JOREK default.
+            values, source = [h5_value(spec.key)], "h5"
         else:
-            namelist_key = spec.key
+            namelist_key = (spec.key or "").lower()
             if namelist_key in namelist:
                 raw = namelist[namelist_key]
                 if spec.boolean:
-                    truthy = str(raw).strip().lower().lstrip(".") in {"true", "t"}
+                    truthy = str(raw).strip().strip(".").lower() in {"true", "t"}  # handles Fortran .t./.f.
                     values, source = [1.0 if truthy else 0.0], "namelist"
                     raw = None  # fall through to flatten below
                 if isinstance(raw, list):

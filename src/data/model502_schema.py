@@ -13,7 +13,7 @@ from typing import Mapping, Sequence
 import torch
 
 
-SCHEMA_VERSION = "model502-state-v1"
+SCHEMA_VERSION = "model502-state-v2"
 MODEL_ID = 502
 
 # Model 502 Fortran ``mod_model_settings.f90`` uses one-based indices:
@@ -24,13 +24,24 @@ FIELD_NAMES: tuple[str, ...] = (
 FIELD_INDEX = {name: index for index, name in enumerate(FIELD_NAMES)}
 NUM_STATE_FIELDS = len(FIELD_NAMES)
 
-# HDF5 ``values`` follows the legacy Fortran order above.  The model tensor is
-# deliberately reordered to the canonical FIELD_NAMES order.
-H5_VALUES_INDICES: tuple[int, ...] = (2, 1, 0, 3, 4, 5, 6, 7, 8)
+# HDF5 ``values`` is written by ``mod_export_restart.f90`` as a direct copy of
+# ``node%values`` (no reordering), so its channel order *is* the Fortran order
+# above: 0=psi, 1=Phi, 2=Z_j, 3=omega, 4=rho, 5=T_i, 6=v_par, 7=rho_imp,
+# 8=T_e.  The mapping is therefore the identity.  It used to be
+# ``(2, 1, 0, 3, 4, 5, 6, 7, 8)``, which silently swapped psi and Z_j and
+# invalidated every psi-based diagnostic (see the progress log, 2026-09-29).
+H5_VALUES_INDICES: tuple[int, ...] = (0, 1, 2, 3, 4, 5, 6, 7, 8)
 
+# Sign-preserving log compression (``symlog``) for the 4 non-negative fields.
+# It used to be ``log1p(clamp(x, 0))``, which silently destroyed the small
+# negative values JOREK produces at boundary nodes (~1.7% of rho_imp nodes) and
+# made the transform non-invertible; symlog keeps the sign and is exact
+# (see report/pitfalls.md #32 and tests/test_normalization_contract.py).
 LOG1P_FIELD_NAMES: tuple[str, ...] = ("rho", "T_i", "rho_imp", "T_e")
 LOG1P_FIELD_INDICES: tuple[int, ...] = tuple(FIELD_INDEX[name] for name in LOG1P_FIELD_NAMES)
-LINEAR_FIELD_NAMES: tuple[str, ...] = tuple(name for name in FIELD_NAMES if name not in LOG1P_FIELD_NAMES)
+SYMLOG_FIELD_NAMES: tuple[str, ...] = LOG1P_FIELD_NAMES
+SYMLOG_FIELD_INDICES: tuple[int, ...] = LOG1P_FIELD_INDICES
+LINEAR_FIELD_NAMES: tuple[str, ...] = tuple(name for name in FIELD_NAMES if name not in SYMLOG_FIELD_INDICES)
 
 # Marker-spi particle projections (``projections*.h5``, use_marker mode) are the
 # primary source-control channel (ADR-0005): they are controls projected onto
@@ -118,25 +129,36 @@ def reorder_h5_values(values: torch.Tensor) -> torch.Tensor:
 
 
 def transform_state(state: torch.Tensor) -> torch.Tensor:
-    """Apply the pre-Z-score Model 502 transform.
+    """Apply the pre-Z-score Model 502 transform (``symlog`` on 4 channels).
 
-    Positive fields use ``log1p(clamp(x, min=0))``.  The clamp is an explicit
-    data-quality guard only; callers should record/inspect negative raw values
-    rather than treating this as a physics correction.
+    The non-negative fields (``rho``, ``T_i``, ``rho_imp``, ``T_e``) use the
+    sign-preserving log ``sign(x) * log1p(|x|)``: it compresses the dynamic
+    range like ``log1p`` while staying exactly invertible, including the
+    noise-level negative values JOREK writes at boundary nodes.
     """
     state = validate_state_tensor(state)
-    transformed = state.clone()
-    for index in LOG1P_FIELD_INDICES:
-        transformed[:, index] = torch.log1p(torch.clamp(transformed[:, index], min=0.0))
+    transformed = state
+    for index in SYMLOG_FIELD_INDICES:
+        channel = transformed[:, index]
+        replaced = torch.sign(channel) * torch.log1p(channel.abs())
+        # Out-of-place: an in-place ``[:, index] = f(view)`` invalidates the view
+        # for autograd (the physics loss differentiates through this).
+        mask = torch.zeros(transformed.shape[1], dtype=torch.bool, device=transformed.device)
+        mask[index] = True
+        transformed = torch.where(mask.unsqueeze(0), replaced.unsqueeze(1), transformed)
     return transformed
 
 
 def inverse_transform_state(state: torch.Tensor) -> torch.Tensor:
     """Reverse :func:`transform_state` after de-standardisation."""
     state = validate_state_tensor(state)
-    restored = state.clone()
-    for index in LOG1P_FIELD_INDICES:
-        restored[:, index] = torch.expm1(restored[:, index])
+    restored = state
+    for index in SYMLOG_FIELD_INDICES:
+        channel = restored[:, index]
+        replaced = torch.sign(channel) * torch.expm1(channel.abs())
+        mask = torch.zeros(restored.shape[1], dtype=torch.bool, device=restored.device)
+        mask[index] = True
+        restored = torch.where(mask.unsqueeze(0), replaced.unsqueeze(1), restored)
     return restored
 
 

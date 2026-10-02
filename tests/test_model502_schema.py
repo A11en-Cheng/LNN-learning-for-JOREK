@@ -26,6 +26,18 @@ def test_h5_values_are_reordered_into_canonical_model502_order():
         assert torch.equal(state[:, output_index], raw[h5_index, :])
 
 
+def test_h5_values_follow_the_fortran_model_order_without_permutation():
+    """Regression for the psi/Z_j swap (progress log, 2026-09-29).
+
+    ``mod_export_restart.f90`` copies ``node%values`` into the HDF5 dataset
+    without reordering, and Model 502 declares psi=1 / u=2 / Z_j=3 (1-based).
+    Any non-identity permutation here silently corrupts the state contract.
+    """
+    assert H5_VALUES_INDICES == (0, 1, 2, 3, 4, 5, 6, 7, 8)
+    assert FIELD_NAMES[0] == "psi"
+    assert FIELD_NAMES[2] == "Z_j"
+
+
 def test_positive_channel_transform_round_trip():
     state = torch.tensor([
         [1.0, -2.0, 3.0, 4.0, 0.5, 2.0, -1.0, 0.25, 3.0],

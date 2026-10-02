@@ -30,8 +30,10 @@ def test_parser_accepts_single_harmonic_and_returns_canonical_state(tmp_path):
     graph = JorekDataParser(str(frame)).parse_to_graph()
 
     assert graph.x.shape == (6, 9)
-    # Canonical index 0 is psi, which reads raw channel 2 (= value 2.0).
-    assert graph.x[0, 0].item() == pytest.approx(2.0)
+    # The fixture writes raw channel c = c, and the H5 channel order is the
+    # canonical order (identity mapping), so psi=0.0 and Z_j=2.0.
+    assert graph.x[0, 0].item() == pytest.approx(0.0)
+    assert graph.x[0, 2].item() == pytest.approx(2.0)
 
 
 def test_dataset_uses_strict_names_and_marker_alignment(tmp_path):

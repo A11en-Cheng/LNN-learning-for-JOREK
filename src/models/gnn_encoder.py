@@ -70,8 +70,41 @@ class JorekGNNEncoder(nn.Module):
                 nn.SiLU(),
                 nn.Linear(hidden_dim, input_dim),
             )
+        # Explicit time conditioning: the rate function's contract is
+        # rate(x, condition, source, dt), so log(dt_scaled) is injected as a
+        # per-node feature (log covers the ~500x non-uniform dt range).
+        self.time_mlp = nn.Sequential(
+            nn.Linear(1, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+        # Explicit history conditioning: the previous frame's per-channel
+        # rate (already normalised by the decoder rate_scale) carries the
+        # short-horizon trajectory information that a single snapshot lacks -
+        # a supervised probe recovered Phi's rate only once history was added.
+        self.history_mlp = nn.Sequential(
+            nn.Linear(NUM_STATE_FIELDS, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, input_dim),
+        )
+        # Zero-init the residual branches: a checkpoint that predates these
+        # inputs (loaded with strict=False) then behaves exactly as before
+        # instead of injecting random noise.
+        nn.init.zeros_(self.history_mlp[-1].weight)
+        nn.init.zeros_(self.history_mlp[-1].bias)
+        nn.init.zeros_(self.time_mlp[-1].weight)
+        nn.init.zeros_(self.time_mlp[-1].bias)
 
-    def forward(self, x, edge_index, pos, condition=None, batch=None):
+    def forward(
+        self,
+        x,
+        edge_index,
+        pos,
+        condition=None,
+        batch=None,
+        time_input=None,
+        history=None,
+    ):
         """
         Args:
             x: 节点特征矩阵 [Total_nodes, 9] in Model 502 canonical order
@@ -81,6 +114,9 @@ class JorekGNNEncoder(nn.Module):
             latent_x: 潜在节点特征 [Total_nodes, latent_dim]
             condition: 可选的零维条件向量 [Batch, condition_dim]，注入点为 encoder 输入
             batch: PyG batch 索引，用于把条件广播到各图的节点
+            time_input: 可选逐节点 log(dt_scaled) [Total_nodes, 1]
+            history: 可选逐节点上一帧速率 [Total_nodes, 9]
+                （已按 rate_scale 归一化为 O(1)）
         """
         validate_state_tensor(x, name="encoder input")
         if condition is not None:
@@ -98,6 +134,25 @@ class JorekGNNEncoder(nn.Module):
                 x = x + embedding[batch]
             else:
                 x = x + embedding.expand(x.size(0), -1)
+        if time_input is not None:
+            time_input = torch.as_tensor(time_input, dtype=x.dtype, device=x.device)
+            if time_input.dim() == 1:
+                time_input = time_input.view(-1, 1)
+            if time_input.size(0) != x.size(0):
+                raise ValueError(
+                    f"time_input must have one entry per node, got {time_input.size(0)}"
+                )
+            x = x + self.time_mlp(time_input)
+        if history is not None:
+            history = torch.as_tensor(history, dtype=x.dtype, device=x.device)
+            if history.dim() == 1:
+                history = history.view(-1, NUM_STATE_FIELDS)
+            if history.size(0) != x.size(0) or history.size(1) != NUM_STATE_FIELDS:
+                raise ValueError(
+                    f"history must be [{x.size(0)}, {NUM_STATE_FIELDS}], "
+                    f"got {tuple(history.shape)}"
+                )
+            x = x + self.history_mlp(history)
         
         # 计算几何特征 (Delta R, Delta Z) 作为 edge_attr
         row, col = edge_index

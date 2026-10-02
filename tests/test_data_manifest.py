@@ -90,8 +90,8 @@ def test_discover_runs_lists_immediate_directories_sorted(tmp_path):
 
 
 def test_build_manifest_split_is_sequence_level_and_stats_are_train_only(tmp_path):
-    # Two frames in the train run: rho values 0 and e-1, so after the
-    # log1p(clamp) transform they are exactly [0, 1] -> mean 0.5, std 0.5.
+    # Two frames in the train run: rho values 0 and e-1, so after the symlog
+    # transform they are exactly [0, 1] -> mean 0.5, std 0.5.
     run_train = _make_run(tmp_path, "t_run", indices=[1, 2], marker_indices=[1, 2])
     run_val = _make_run(tmp_path, "v_run", indices=[1], marker_indices=[1])
     write_model502_frame(
@@ -114,10 +114,10 @@ def test_build_manifest_split_is_sequence_level_and_stats_are_train_only(tmp_pat
     assert splits == {"train", "val"}
     train_name = next(run["name"] for run in manifest["runs"] if run["split"] == "train")
     stats = manifest["stats"]
-    assert stats["schema"] == "model502-state-v1"
+    assert stats["schema"] == "model502-state-v2"
     rho = stats["fields"]["rho"]
     if train_name == "t_run":
-        # t_run rho after log1p is exactly [0, 1] across its two frames.
+        # t_run rho after symlog is exactly [0, 1] across its two frames.
         assert rho["mean"] == pytest.approx(0.5)
         assert rho["std"] == pytest.approx(0.5)
     else:
@@ -128,7 +128,9 @@ def test_build_manifest_split_is_sequence_level_and_stats_are_train_only(tmp_pat
         assert rho["std"] == pytest.approx(0.0)
     assert rho["n_negative"] == 0
     psi = stats["fields"]["psi"]
-    assert psi["mean"] == pytest.approx(2.0)  # canonical index 0 takes raw channel 2
+    # The fixture writes raw channel c = c, and H5 order == canonical order,
+    # so psi is the constant raw channel 0 (= 0.0).
+    assert psi["mean"] == pytest.approx(0.0)
     assert psi["std"] == pytest.approx(0.0)
     condition = stats["condition"]
     assert condition["names"]
@@ -234,5 +236,7 @@ def test_real_data_eligible_runs_share_one_grid():
 
     assert summary["consistent"] is True
     assert summary["n_grids"] == 1
-    assert len(summary["runs"]) == 10
+    # The corpus dropped to eight runs on 2026-09-29: the two ``*_v200``
+    # directories were mislabelled duplicates of ``*_v300`` and were removed.
+    assert len(summary["runs"]) == 8
     assert all("ntor11" not in run["name"] for run in summary["runs"])

@@ -177,8 +177,12 @@ def _canonical_transformed_values(state_path: Path) -> tuple[np.ndarray, np.ndar
     canonical = values[list(H5_VALUES_INDICES), :].T
     negative_count = np.zeros(9, dtype=np.int64)
     for channel in LOG1P_FIELD_INDICES:
+        # symlog: sign-preserving, so negative values are kept (they used to be
+        # clamped to 0, which made the round trip lossy - pitfalls #32).
         negative_count[channel] = int((canonical[:, channel] < 0).sum())
-        canonical[:, channel] = np.log1p(np.clip(canonical[:, channel], 0.0, None))
+        canonical[:, channel] = np.sign(canonical[:, channel]) * np.log1p(
+            np.abs(canonical[:, channel])
+        )
     return canonical, negative_count
 
 

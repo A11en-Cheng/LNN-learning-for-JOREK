@@ -30,10 +30,17 @@ def write_model502_frame(
         f["x"] = np.zeros((2, 4, 1, n_nodes), dtype=np.float64)
         f["x"][0, 0, 0, :] = np.arange(n_nodes)
         f["x"][1, 0, 0, :] = np.arange(n_nodes) * 2
+        # Minimal element geometry: ``load_run_topology`` (and therefore every
+        # FEM/graph feature) needs ``size`` and ``vertex`` to exist, exactly as
+        # the real restart files have them.
+        n_elem = max(1, n_nodes - 1)
+        f["size"] = np.ones((4, 4, n_elem), dtype=np.float64)
+        f["vertex"] = np.tile(
+            np.arange(1, 5, dtype=np.int64)[:, None], (1, n_elem)
+        )
         values = np.zeros((9, 4, harmonics, n_nodes), dtype=np.float64)
         for channel in range(9):
             values[channel, 0, 0, :] = float(channel)
         if rho_values is not None:
             values[4, 0, 0, :] = rho_values
         f["values"] = values
-

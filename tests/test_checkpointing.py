@@ -43,8 +43,16 @@ def test_checkpointed_forward_backward_matches_plain():
 
     assert torch.allclose(out_plain[0], out_ckpt[0], atol=1e-6)
     for plain_param, ckpt_param in zip(plain_encoder.parameters(), ckpt_encoder.parameters()):
+        if plain_param.grad is None or ckpt_param.grad is None:
+            # Optional modules (e.g. the time_mlp used only when a
+            # time_input is passed) receive no gradient in this forward.
+            assert (plain_param.grad is None) == (ckpt_param.grad is None)
+            continue
         assert torch.allclose(plain_param.grad, ckpt_param.grad, atol=1e-5)
     for plain_param, ckpt_param in zip(plain_decoder.parameters(), ckpt_decoder.parameters()):
+        if plain_param.grad is None or ckpt_param.grad is None:
+            assert (plain_param.grad is None) == (ckpt_param.grad is None)
+            continue
         assert torch.allclose(plain_param.grad, ckpt_param.grad, atol=1e-5)
 
 
@@ -74,4 +82,3 @@ def _forward_loss(encoder, decoder, graph):
     loss = delta.square().mean() + p_disrupt.square().mean()
     loss.backward()
     return delta.detach(), p_disrupt.detach()
-

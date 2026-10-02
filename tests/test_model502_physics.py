@@ -27,7 +27,7 @@ def test_residuals_are_finite_on_real_frame():
         pytest.skip("real data not present")
     graph = JorekDataParser(path).parse_to_graph()
     residuals = model502_residuals(graph.x, graph.x, graph, dt=10.0)
-    assert all(np.isfinite(v) for v in residuals.values())
+    assert all(np.isfinite(v.item()) for v in residuals.values())
     assert set(residuals) >= {
         "induction", "vorticity", "density", "ion_pressure",
         "electron_pressure", "parallel_momentum", "impurity",
@@ -38,4 +38,3 @@ def torch_isfinite(tensor):
     import torch
 
     return torch.isfinite(tensor)
-

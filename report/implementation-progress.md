@@ -1,118 +1,2573 @@
 # Implementation progress log
 
-## 2026-09-07 — Phase 0 closed and the single-sample overfit gate passed
+Append-only log of the interpolation-centred Model 502 route.  Newest entries
+first.  Design decisions live in `docs/adr/`; evidence records live beside this
+file; artifacts are referenced by path (they are not committed).
 
-- Data layer (#0001-#0005, #0002): EHL-2 2D fixtures and split manifest;
-  protocol v2 with the five-field marker-projection channel plus the
-  three-field background channel; machine-checked parameter-surface audit;
-  the zero-dim parameter channel (h5 → namelist → JOREK defaults, with
-  provenance).  The JOREK-side export ticket was superseded by the namelist
-  channel (ADR-0007).
-- Time dynamics (#0006): per-step physical dt (`step_dt_seconds`), multi-horizon
-  skip sampling, stateful LNN with BPTT boundaries, per-step dt in the physics
-  loss.
-- Gate (#0007): real single-sample overfit passes — loss drop 99.993%, no NaN,
-  reload difference 4.14e-7; 54 tests green.
-- Planned (#0014): ADAS coronal closure prototype validated against recorded
-  projections, feeding the three-mode forced rollout in #0012.
+## 2026-10-03 (阶段总结 + 物理全停/背景三源删除 + shard→投影可行性评估)
 
-## 2026-09-07 (later) — conditioning wired, rollout gate still failing for a sharp reason
+**用户决定与澄清**：① 实时物理计算全部停止，工作全部走 data；② namelist 里
+`particlesource / heatsource_i / heatsource_e` 恒为 0 ⇒ 背景三源从数据需求中删除；
+③ 需要阶段总结。
 
-- #0011: condition encoder at the encoder input; the zero-dim channel grew to
-  44 entries with scenario discriminators (n_spi, pellet_density, gamma_*,
-  particlesource, ellip, bc_natural_open); ablation shows distinguishable
-  responses (single-entry ~0.01-0.02, cross-run 0.04 mean |Δlatent|).
-- #0009 retry (v2, 1000 steps, 6 runs, conditioned): still fails on both
-  held-out runs (15-25% worse than persistence, drift 0.5).  One-step
-  diagnostic: predicted |Δ| is ~56x the true single-step increment on a
-  quiescent frame — the residual magnitude ignores the local state, pointing at
-  under-learned state dependence and phase-skewed training windows.  Follow-up:
-  revisit the delta convention (rate × dt) and rebalance window sampling.
+**已落地**：
+1. 新增 **[report/stage-summary-2026-10-03.md](stage-summary-2026-10-03.md)**：
+   覆盖目标/模型/训练配方/结果主表（**连同评测窗口集合**）/被推翻的历史结论/
+   工具与产物清单/未完成项/补数据建议，共 9 节。
+2. `new_version.md` 刷新：顶部加"当前状态与决策（2026-10-03）"；1.1 的 `S` 契约删掉背景
+   三源；1.5.4 表标注 P0a/P1 未做、P2 不做、背景三源条删除；Phase 2.2 增加
+   "shard → 投影场可行性"整段；Phase 4 标注暂停；Phase 5 标注现状。
+3. 澄清两条被混淆的"隐式矩阵"问题（见下），并写进 ADR-0016 的对照说明。
 
-## 2026-09-07 (end of day) — residual rate + dt_ref fix the magnitude bias, gate still open
+**两条"隐式矩阵"问题的区别（重要）**：
+- **marker→projection 反组装**（Phase 1.5.1，已取消）：当年确实组过 `M·x_recorded`
+  与组装 RHS 的对比，误差 ~1e3 且逐 dof 跨 4 个数量级 ⇒ **根因是语义**（投影 RHS 是
+  帧内 n_steps 个子步累积，而 `part*.h5` 只有帧末快照），不是矩阵装配失败。
+  ADR-0016 因此取消该 gate；主路径改用教师源，闭环候选顺序 = 确定性解析/ADAS →
+  解析 + 有界学习修正 → 粒子侧学习映射（需 P2 级导出）。
+- **九场整体隐式求解**（Phase 4 物理演化，真正的阻塞）：自建"逐场分裂演化器"必然发散，
+  因为 JOREK 是九变量 + 隐式矩阵同步求解 ⇒ 恢复物理损失前必须做整体隐式矩阵或弱形式演化。
+  这条与 shard→投影无关（后者是"装配/沉积"，在节点空间只需基函数 matvec，不需要解方程）。
 
-- Residual contract changed to a rate with `x_{t+1} = x_t + rate*dt/dt_ref`;
-  dt_ref is the mean training frame step stored in the checkpoint.  This fixes
-  the vanishing-gradient problem caused by dt ~ 4e-6 s.
-- v4 baseline (1000 steps, 6 runs, conditioned): short-horizon drift is back
-  inside the registered threshold (0.0002 vs 0.5), but per-field RMSE is still
-  3-39% above persistence with no improving horizon; a 100-step horizon
-  re-accumulates drift (~9).  The overfit gate re-passes under the new contract
-  (99.998% loss drop, reload 5.1e-7).
-- Open decision: which lever to pull next for the rollout gate (longer
-  training + schedule, horizon-1 training, per-field weights, longer temporal
-  context, phase-balanced windows).
+## 2026-10-02 (rollout 语义落地 + 随机切分 + cosine lr + 磁轴指标修正；h=1/2/5 开跑)
 
-## 2026-09-07 (final) — model-internal time switched to JOREK units
+**用户澄清 + 要求**：要的是"**逐帧插值 h 次**"（`t_{k+h} − t_k = Σ δ_i t`），
+并且 **h=2/5 的时间间隔必须是随机的、不能是均匀的**。
 
-- Normalization relations verified in the JOREK sources and recorded in
-  `src/physics/definitions.md` §8 (rho_norm = central_density*1e20*central_mass*AMU,
-  t_norm = sqrt(mu0*rho_norm), v_norm = 1/t_norm; COCOS signs only at the IMAS
-  interface).  Model time is now JOREK units everywhere in the update rule and
-  the LNN timespan; seconds remain only at the physics boundary.
-- v5 retrain: same gate outcome as v4 (per-field ratio 1.26-1.35 vs
-  persistence, drift over threshold), confirming the unit convention is not the
-  blocker.  The JOREK-unit convention is kept as the final contract.
+**落地**：
+1. `--horizon-mode rollout`：h 次连续传播，每次跨一个**记录间隔** `δ_i`，中间记录帧作为
+   各步编码输入、hidden 链式传递，损失只落在第 h 帧（trainer 的 `_batch_loss`/`_evaluate`
+   与 `eval_phase3_structure.py` 三处同步）。
+2. **随机性两层保证**：① 记录的 δ_i 本身非均匀（实例：h=5 的 δ = `[25,44,50,50,50]`(=219)、
+   `[50,50,88,100,100]`(=388)、`[44,50,50,50,88]`(=282)）；② 每个记录区间内部改成
+   **随机分数切分**（原 rollout 分支误用等分的 `model.step`，已改为
+   `multi_substep(mode="random")`）。
+3. **cosine lr 3e-3 → 3e-4**（`--lr-schedule cosine --lr-final`）：恒定 lr 在 ~ep620 后失稳
+   （#54），三组统一用同一预算 1000 epoch × 20 步、`--save-best-metric closer`。
+4. **磁轴指标**：新增"真轴节点上的 psi 值差 / max|psi|"（中位/p90，写进 JSON），
+   硬 argmax 降级为 legacy 参考（#54 证明它在 relL2≲1% 时无分辨力）。
 
-## 2026-09-05 — Model 502 schema and source-interface foundation
+**进行中**：`ltc_roll_h{1,2,5}_1000` 串行（`.scratch/n/run_rollout_sweep.sh`），
+每组跑完自动出 held-out 评测（含 dt 分桶与新的磁轴列），预计 ~5 h。
 
-Scope authorised by the user: validate the existing project, define the
-nine-field schema/protocol, and prepare the codebase for new Model 502 source
-data.  No training run or external data download was performed.
+## 2026-10-02 (h=1/2 的 1000-epoch 结果；用户澄清 horizon 语义为"逐帧插值 h 次")
 
-### Completed
+**先说口径**：用户澄清要的不是"一次跳 h 帧"（`jump`），而是**逐帧插值 h 次**
+（`t_{k+h} − t_k = Σ_i δ_i t`，即 `--horizon-mode rollout`）。已把 rollout 接进
+trainer 的 `_evaluate` 与 `eval_phase3_structure.py`（h=1 两种模式对 LTC 等价，因为
+输入冻结 + 精确半群 ⇒ 等分/随机切分结果相同）。
 
-- Audited `redundant/jorek/models/model502/mod_model_settings.f90`: Model 502
-  has `n_var=9` and one-based variables `psi,u,zj,w,rho,Ti,Vpar,rhoimp,Te`.
-- Audited `redundant/jorek/models/model502/mod_sources.f90`: the first forcing
-  contract is `particle_source`, `heat_i_source`, and `heat_e_source`.
-- Added `src/data/model502_schema.py` as the canonical field order, HDF5
-  reordering, transforms, source contract, condition names, and shape guards.
-- Updated the HDF5 parser and sequence dataset to expose explicit source
-  availability, reject partial source data, retain namelist availability masks,
-  and optionally require sources for every frame.
-- Changed encoder/decoder defaults to the mandatory nine-field Model 502
-  interface. Decoder output is now a nine-field one-step residual.
-- Added an optional, explicitly normalised three-control injection point to
-  the LNN processor. Raw HDF5 sources are not automatically fed to the model.
-- Corrected active loss/benchmark field indices from legacy five-field indices
-  to the canonical Model 502 indices. The mass diagnostic now subtracts raw
-  `S_rho` when it is present; the result remains a reduced diagnostic.
-- Moved default configuration from incompatible BEST/Model 600 data to the
-  local ITER Model 502 directory and disabled incompatible legacy checkpoints.
-- Declared missing runtime/test dependencies in `requirements.txt`, removed the
-  accidental syntax-invalid editor scratch file, and fixed `.gitignore` so its
-  dataset rule no longer hides `src/data/` source code from version control.
+**被停掉的实验**（在澄清之前启动，均为 `jump`）：h=1 与 h=2 各跑满 1000 epoch，
+h=5 停在 ~ep88。结果：
 
-### Validation status
+| run | 模式 | best_ep | train_mse@best | val_mse@best | held-out R² | relL2 | closer | skill(中位) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `ltc_dt_lr3e3_long200`（旧 14 帧 manifest） | jump | 191 | 1.16e-4 | 0.0147 | 0.9922 | 0.0729 | 0.521 | +0.632 |
+| **`ltc_dt_h1_1000`** | jump ≡ rollout | **634** | **6.6e-5** | **0.01245** | **0.9933** | **0.0660** | **0.465** | **+0.660** |
+| `ltc_dt_h2_1000` | jump | 612 | 1.4e-4 | 0.0387 | 0.9766 | 0.1324 | 0.449* | +0.621 |
+| `ltc_dt_h5_1000` | jump（停在 ep88） | — | — | — | — | — | — | — |
 
-- Static validation passed: `python -m compileall -q src tests` and
-  `git diff --check` both pass.
-- Created a clean local Python 3.14 validation environment and installed the
-  declared dependencies. The checked-in `venv` remains unusable because it
-  points to a missing Python 3.11 executable; it was not modified.
-- `pytest` passed: 12 Model 502 schema/source/interface and migrated smoke
-  tests. This includes real HDF5 parser loading, encoder/LNN/decoder forward
-  and backward through the training smoke test, source-contract fixtures, and
-  checkpoint reload equivalence.
-- `tests/verify_data_integrity.py` passed on all 104 local HDF5 files: no read
-  errors, NaN or Inf values, and no node-count warning.
-- Real EHL-2 Model 502 frames parse as `[4125, 9]` with valid time and geometry.
-  They correctly report `source_available=false` and are rejected when
-  `require_source=true`.
+* 跨 h 的 closer 不可比（参照帧远了 h 倍）。
 
-### Required next verification
+**两个新发现**（详见 pitfalls #54）：
+1. **恒定 lr 3e-3 下最优点在 ~ep620**，之后失稳（h=1 的 closer 0.48→0.77、train_mse 反弹 3 倍）
+   ⇒ 超长训练必须配 lr 衰减；`--save-best` 抢救回了 ep634 的最好模型。
+2. **磁轴硬 argmax 指标在该精度下失效**：h=1 报 23.8 mm，实为伪影（真轴上 psi 差 0.1%，
+   顶部平坦导致 argmax 抖动 2–4 cm）。应改为"真轴节点 psi 值差"或抛物线插值峰位。
 
-1. When source data arrives, use `require_source=True` and add a fixture proving
-   all three source fields, units and time alignment.
-2. Create a train/validation/test sequence manifest and compute state/source
-   statistics only from the training split.
-3. Run a fixed-seed single-sample overfit and short free-run rollout before
-   enabling the source loss or any MoE work.
+**下一步**：按澄清的语义重跑 **rollout** 的 h=2、h=5（h=1 复用），并配 **lr 衰减**
+（例如 cosine 3e-3 → 3e-4，600–1000 epoch），同时把磁轴指标换成非 argmax 版本。
 
-### Deferred deliberately
+## 2026-10-01 (dt 清点 + horizon=1/2/5 的 1000-epoch 串行对比实验)
 
-- Full Model 502 nine-equation PDE loss and charge-state-aware pressure closure.
-- Ion/electron source energy residuals, SPI/MGI/pellet/radiation/ionisation
-  extensions, and automatic source normalisation.
-- MoE, gradient firewall, checkpointing, and 3D work.
+**用户问题**：现在的 Δt 有几种？
+**清点结果**（脚本口径见下）：
+* **原始帧间隔**（8 run 的连续帧）：**55 种**。主干是"早密后疏"导出表
+  `0.5/1/2/2.5/5/10/20/25/50/100/250`，加 0.9× 旁支（`4.9/9.899/24.7/49.5/99/247`）
+  与零散值（`5.39/2.11/4.35/6.8/15.4/0.95/1.8/…`），另含 1 个**负数 −9089.4**
+  （`scan_1d21_ang12_massloss_neon` 的杂帧，进不了窗口）。
+* **模型实际监督用到的 dt**（旧 manifest train split，1884 个区间）：**36 种**，
+  top: `2(456) / 5(309) / 0.5(228) / 50(201) / 25(177) / 10(171) / 20(57) / 100(46) / 1(27) / 49.5(22) / 24.7(20) / 39.5(15) …`。
+* 若目标帧取 `k+h`，实际 Δt = 连续 h 段之和：**h=1 → 36 种**（同上）、**h=2 → 62 种**（中位 10）、h=5 更多。
+
+**horizon 实验设计（已启动）**：
+1. 新 manifest `.scratch/n/manifest_h5.json`：`burn_in=10, horizon=5` ⇒ **16 帧/窗口**，
+   8 run、565 训练窗口 / 205 验证窗口（v400 的 val = 13 窗口）。**三组实验共用同一批窗口**，
+   只改监督目标的下标。
+2. trainer/eval 新增 `--horizon h`（+`--horizon-mode {jump,rollout}`）：
+   `jump`（默认）= 从帧 `k` 一次传播跨 `Δt = t_{k+h} − t_k`，控制项取**目标帧**投影，
+   数据损失只落在帧 `k+h`；`rollout` = 让网络逐帧走 h 步（教师强制中间记录帧）。
+3. 三组：`ltc_dt_h{1,2,5}_1000` = LTC + `--input-dt` + lr 3e-3 + **1000 epoch × 20 步**，
+   `--save-best-metric closer`，纯 data（`λ_phys=0`）。
+4. **样本预算差异（必须记住）**：监督区间/窗口 = `6 − h` ⇒ 每 epoch（640 窗口）
+   h=1 有 **3200** 个监督样本、h=2 **2560**、h=5 只有 **640**。
+   若要做"等样本"对照，h=5 需要把 `steps-per-epoch` 提到 ~100（本轮先按用户口径 1000 epoch）。
+
+**状态**：串行脚本 `.scratch/n/run_horizon_sweep.sh`，日志 `.scratch/n/horizon_sweep.log`，
+产物 `output/cfc_interp/ltc_dt_h{1,2,5}_1000/`；预计 ~3.5 h（含每组的 held-out 评测）。
+
+## 2026-10-01 (诊断三件套 + 长训 4000 步：精确传播子反超旧 cell)
+
+**用户要求**：确认 `closer` 只用 data 帧；以 `closer` 迭代；不做 dt 加权；做三张诊断图；
+然后展开长训。
+
+**1. `closer` 语义确认**：被比较的 `u_pred`（解码的**下一记录帧**）/`u_true`/`u_prev` 全是记录帧；
+区间内的插值点 `t*` 不承担任何损失或指标 ⇒ 没有中间帧信息。
+**2. 选型指标切换**：`_evaluate` 增加 `mean_closer`，`--save-best-metric closer`（默认）按它最小化选 checkpoint。
+**3. 不做 dt 加权**（用户决定，作废原提案）；`--loss-scale dynamics` 是逐场配平，与 dt 无关，保留。
+**4. 三张诊断图**（`tests/plot_training_curves.py` / `plot_metrics_vs_dt.py` / `plot_field_slices.py`
+   + `tests/make_diagnostics.sh` 一键），并修掉 `to_device()` 丢 `vertex/size/x_dofs` 的 bug。
+**5. 长训结果**（`ltc_dt_lr3e3_long200`，4000 步，best=ep191）：
+
+| run | 步数 | loss | val_mse | R² | relL2 | closer | skill_pers(中位) |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ncps `long60x20` | 1200 | 3.66e-4 | 0.0236 | 0.9909 | 0.0797 | 0.598 | +0.424 |
+| ltc `ltc_lr3e3` | 1200 | 3.07e-4 | 0.0236 | 0.9885 | 0.0889 | 0.649 | +0.389 |
+| **`ltc_dt_lr3e3_long200`** | **4000** | **1.16e-4** | **0.0147** | **0.9922** | **0.0729** | **0.521** | **+0.632** |
+
+⇒ **四项全面反超旧 ncps cell**（只有磁轴中位略差 5.3 vs 4.5 mm）。**修正 #45/#47**：
+"时间一致性的代价"主要是没训够（lr 3e-3 + 4000 步 + dt 特征之后不再吃亏）。
+`val_mse` 到最后一轮仍在下降 ⇒ **仍欠拟合**；残余短板集中在 Phi/omega/Z_j/v_par
+（closer 0.59–0.74）与最粗 dt 区间。详见 pitfalls #53，图在 `.scratch/n/fig/ltc_dt_lr3e3_long200_*`。
+
+## 2026-10-01 (dt 显式特征 + dt 分桶评测；发现 dR2 的 dt 伪影)
+
+**用户要求**：把 dt 接进 encoder，并做 dt 分桶报告。
+
+**1. `--input-dt`（已实现）**：encoder 增加 `log1p(dt)/log1p(dt_scale)`（36→37 维），
+在 `step` / `multi_substep` / `advance_with_source_integral` 里按 `batch_index` 展开到每节点；
+dt 是区间常量 ⇒ **半群性不受影响**（单测：切分不变性 6.9e-08；改 dt 会改变预测）；
+`model_kwargs_from_meta` 能从 checkpoint 自动识别该开关。
+
+**2. per-dt-bucket 评测（已实现）**：`eval_phase3_structure.py` 现在输出
+`dt<3 / 3–15 / 15–60 / ≥60` 四桶的 mean dR2 与 psi/Phi/Z_j/omega/T_e（含样本数，写进 `--json`）。
+
+**3. A/B（同预算 60×20、lr 3e-3、纯 data）**：
+
+| run | train_mse | val_mse | held-out R² | relL2 | **dR2** |
+|---|---:|---:|---:|---:|---:|
+| `ltc_lr3e3`（无 dt） | 3.07e-4 | 0.0236 | 0.9885 | 0.0889 | **+0.3227** |
+| `ltc_lr3e3_dt`（`--input-dt`） | **2.66e-4** | 0.0229 | 0.9880 | 0.0892 | **+0.3206** |
+
+⇒ 训练拟合更好，但 held-out **中性**（噪声内）；原因是 held-out 的 val 窗口只有粗 dt 两桶
+（15–60 / ≥60），而 dt 本来就从 cell 的 `exp(−rate·ts)` 进去了。分场互有胜负
+（T_i/T_e/rho_imp/v_par 变好；Z_j/Phi/omega 变差）。
+
+**4. 重要发现（pitfall #49）：dR2 与 dt 强耦合，细 dt 上是度量伪影**。
+把同一个 checkpoint 拿到细网格 run 上分桶评测：
+
+| checkpoint | 粗 dt（v400 held-out） | 细 dt run |
+|---|---:|---:|
+| ncps `long60x20` | +0.416 | **−38.0**（dt<3 桶 −91.6，T_e −526） |
+| ltc `ltc_lr3e3` | +0.323 | **−50.7**（dt<3 桶 −62.2，T_e −143） |
+
+两个模型都崩 ⇒ 细 dt 的 `‖Δ_true‖` 已到解码噪声底，`dR2 = 1 − ‖Δ_err‖²/‖Δ_true‖²` 失去意义。
+**dR2 不能跨 dt 比较**；建议再加带噪声底的指标 `dR2_floor = 1 − ‖Δ_err‖²/max(‖Δ_true‖², floor_f)`
+（`floor_f` 取该场准静止段的增量方差），并给一个**细 dt 的留出 fold** 才能真正检验 dt 特征。
+
+## 2026-10-01 (优化扫描：LTC 的瓶颈是 lr；报告口径改成 loss/R²/MSE/dR2 并列)
+
+**用户要求**：同时看 R²、loss、MSE（不要只看 dR2）；先做优化。
+
+**1. 报告口径固化**（可复用）：
+- `tests/eval_phase3_structure.py`：新增 **MSE 列**（逐场物理单位）+ `MEAN` 行
+  （mean R² / mean relL2 / mean dR2）+ `--json` 落盘；
+- `tests/report_run_table.py`（新）：把训练侧 `train_mse`（被优化的 loss）、内层 val MSE、
+  best epoch/val dR2，与 held-out 的 R²/relL2/dR2/磁轴拼成一张表。
+
+**2. 优化扫描（纯 data，60×20=1200 步，hidden 128，backbone 256）**：
+
+| run | cell | lr | train_mse | val_mse | 内层 val dR2 | held-out R² | relL2 | **dR2** | axis [mm] |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| long60x20 | ncps | 3e-4 | 3.66e-4 | 0.0236 | 0.418 | 0.9909 | 0.0797 | **+0.416** | 4.47 |
+| ltc_v2 | ltc | 3e-4 | 5.10e-4 | 0.0255 | 0.175 | 0.9864 | 0.0997 | +0.147 | 7.44 |
+| ltc_lr1e3 | ltc | 1e-3 | 3.60e-4 | 0.0233 | 0.273 | 0.9873 | 0.0942 | +0.235 | 14.84 |
+| **ltc_lr3e3** | ltc | **3e-3** | **3.07e-4** | 0.0236 | **0.361** | 0.9885 | 0.0889 | **+0.323** | 4.47 |
+
+结论：**瓶颈是优化**——`train_mse` 随 lr 单调下降，lr=3e-3 时 LTC 拟合训练集已优于 ncps，
+held-out dR2 抬到 0.323（×2.2），而 **R² 只从 0.9864 动到 0.9885**（正是"R² 掩盖动力学"，
+所以必须四项并列报）。详见 pitfalls #47。
+
+**进行中**：`lr=3e-3 × 150 epoch`（趋势未饱和）与 `lr=1e-2 × 60`（扫上界）。
+**结果（同日，两臂在趋势明确后停止）**：
+
+| run | lr | 预算 | train_mse | held-out dR2 |
+|---|---:|---|---:|---:|
+| `ltc_lr3e3` | 3e-3 | 60×20 跑满 | 3.07e-4 | **+0.323** |
+| `ltc_lr3e3_long` | 3e-3 | 150×20，停 ep55 | 3.29e-4 | **+0.315** |
+| `ltc_lr1e2` | 1e-2 | 60×20，停 ep55 | 4.38e-4 | +0.208 |
+| `ltc_sd_lr3e3` | 3e-3 + `--state-dependent` | 60×20 跑满 | 3.51e-4 | +0.252 |
+
+⇒ **最优 lr ≈ 3e-3**（1e-3→0.235、3e-3→0.32、1e-2→0.21），两个 3e-3 运行复现到 2.5% 以内。
+LTC 与 ncps 的差距收到 **0.32 vs 0.416**，且**差距全部集中在 Phi（+0.06 vs +0.28）与
+omega（−0.02 vs +0.22）**；psi 反超（0.30 vs 0.275），rho/T_i 追近但略低。
+⇒ 时间一致性约束的代价具体落在"梯度乘积 + 椭圆耦合"的输运场上（pitfall #47）。
+下一步候选：`--state-dependent` 与 3e-3 组合（h 依赖 gating 允许非松弛动力学）、
+把 150 轮跑完、或对 Phi/omega 上非局域耦合。
+
+**3. (a) 已做并且否证**：`--state-dependent` + lr 3e-3 = **+0.252**（R² 0.9883 / relL2 0.0920），
+**比严格传播子（input-only）的 +0.323 更差**，且内层 val 的 omega 剧烈震荡
+（−0.52…+0.14）。⇒ "牺牲半群精确性换精度"不成立，保留 input-only 设计。
+
+**4. 新发现（pitfall #48，影响所有既有结论的解读）**：核 dt 时发现
+① 帧间隔 **不是常数**（0.5/1/2/2.5/5/10/20/25/50/100 混合，导出表"早密后疏"）；
+② 训练集 2512 个监督区间的 dt 中位 **5.0**（均值 17.5，最大 250），
+   而 held-out run 的评测窗口 dt 中位 **50.0**（[30,100) 占 46.7%、≥100 占 16.7%）
+   ⇒ **评测在 dt 上是外推**，跨 run 对比被 dt 分布混淆；文档里"50 流体步/帧"只对少数帧成立。
+③ 代码层面 dt **确实进了网络**（`advance` → `ts = dt/50` → LTC 的 `exp(-rate·ts)`，逐窗口/逐节点），
+   但 **encoder 看不到 dt**（只有 u、一/二阶导数、5 通道源控制），源控制也没乘 dt。
+下一步建议：把 `dt`（`log1p(dt)` 或 `dt/dt_scale`）作为**显式输入特征**接进 encoder
+（不破坏半群性），Gate 增加**按 dt 分桶**的报告。
+
+## 2026-10-01 (LTC 加宽状态 + 驱动项/损失接线核对)
+
+**用户要求**：先加宽状态；插值点**不要**走物理残差或积分器，只用真实 data 损失比对；
+并确认驱动项是否已经传入。
+
+**1. 加宽状态（`--hidden 256`，参数 172k→246k，同预算 60×20）**：held-out 平均 dR2
+**+0.156**（psi +0.169、Phi +0.033、Z_j +0.087、omega −0.118、rho/T_i/rho_imp/T_e
+0.26/0.36/0.32/0.29、v_par +0.006）—— 比 hidden 128 的 +0.147 **基本没变**。
+合并此前三个变体（state-dependent +0.197、linear target +0.167、默认 +0.147），
+**四个 LTC 变体全部落在 0.15–0.20**，而 ncps（非传播子）是 +0.416。
+
+**2. 关键线索：LTC 家族一直在欠拟合**。末轮 `train_mse`：ncps 3.66e-4，LTC 各变体
+5.0–5.1e-4；内层 val 的 omega 在 −0.9…+0 之间震荡。⇒ 下一步优先查**优化**
+（lr / 预算 / rate-target 参数化），而不是继续加容量。
+
+**3. 驱动项核对**：进网络的只有 5 通道 marker 投影（`controls = source[:, k+1]`，目标帧，
+经 `control_encoder` 注入 latent）。背景三源在导出文件里**不存在**
+（`projections*.h5` 的 `values` 是 `n_var=5`）；61 维参数通道没进网络（只服务物理残差）；
+碎片状态 `p(t)` 未启用（`with_shards=False`）。⇒ 网络是**插值器**而非预报器。
+
+**4. 损失接线**：按用户要求保持纯 data —— 插值点 `t*` 无任何损失项（不走 physics residual，
+也不走增广积分器），唯一监督是记录帧上的 data loss（+ λ_H1 + λ_axis），
+`--lambda-phys 0`、`--predict-source` 未开。
+
+## 2026-10-01 (CfC → LTC 传播子改造：闭式解 / 去 LSTM / 增广源积分 + 同类 bug 审查)
+
+**用户决定**：把 CfC 网络改造成基于 LTC 微分方程 `dh/dt = -rate·(h - target)` 的**精确解析解**：
+网络不再直接输出下一时刻隐状态，而是输出 `rate`（softplus，>0）与 `target`（tanh）；
+关闭一切 LSTM/GRU 混合记忆；实现增广状态积分器累加源项 `∫S dτ`；并按用户给的协议验收。
+
+**已完成**：
+1. `src/models/ltc_cell.py::LTCCell` —— `h(ts)=h₀e^{−rate·ts}+target(1−e^{−rate·ts})`，
+   `rate=softplus(head)+1e-6`、`target=tanh(head)`（可选 `linear`），backbone 256×2。
+2. **LSTM 已从默认路径移除**（`JorekLNNProcessor(mixed_memory=False)`；旧 checkpoint 需要时显式开）。
+3. `CfCInterpolator` 默认 `cell="ltc"`；**区间内输入固定、只链 h**（旧实现回灌解码 latent 会
+   让系数依赖子步序号，破坏切分不变性）。
+4. 增广源积分器：`predict_source=True` + `advance_with_source_integral(..., num_substeps=5)`
+   （梯形求积；常数源与可加性误差均 0.0）；主路径不启用。
+5. 验收工具 `tests/probe_ltc_semigroup.py`（用户协议）+ `tests/test_ltc_cell.py`（单测）。
+
+**验收读数**（未训练、随机初始化；0→1 vs 0→0.3→1）：
+
+| level | variant | ‖Φ(0)h−h‖ | ‖h₁−h₂‖ | /‖update‖ |
+|---|---|---:|---:|---:|
+| cell | **ltc（默认）** | 0 | **3.3e-07**（float64 6.3e-16） | 3.7e-09 |
+| cell | ltc（state-dependent） | 0 | 3.6 | 4.0e-02 |
+| cell | ncps（旧） | 1.107 | — | — |
+| model | **ltc** | 0 | **2.9e-07** | 5.0e-08 |
+| model | ncps（旧） | 32.7 | 4.43 | 1.3e-01 |
+
+⇒ 满足"1e-6 以内"；`alpha_spread_max` 闸门在训练里从 ~1e-3 掉到 **9e-08**（结构性成立）。
+
+**精度对照**（同预算 60×20、同 seed、held-out v400、内层 val 选 best）：
+ncps **0.416** > ltc v1（旧公式）0.210 > **ltc v2（本次改造）0.147**。
+即严格的传播子目前要付 **~2.8× 精度**的代价；两条已知原因与两个补救选项
+（`--state-dependent`、`--target-activation linear`）已量完：**+0.197 / +0.167**，
+三个变体都在 0.15–0.20，没有一个接近 ncps 的 0.416 ⇒ 差距不是 target 激活或 h 依赖能解释的。
+omega 是唯一在所有 LTC 变体里都翻负的场（−0.016/−0.157/−0.191 vs ncps +0.222）。
+详见 pitfalls #46。
+
+**同类 bug 审查（用户要求）**：修掉 4 处 —— ① 分析脚本用 CLI 默认值搭模型（改用 checkpoint
+的 `meta['args']`，新增 `model_kwargs_from_meta`）；② `_evaluate` α-spread 闸门用了更新后的
+hidden；③ 子步回灌 latent 的伪依赖；④ 旧 processor 探针把输出 latent 回灌再比较。
+另标注 1 处**语义风险**：`controls=source[:,k+1]`（目标帧投影）使网络是**插值器**而非预报器。
+
+## 2026-10-01 (纯 data 推进：训练预算 ×2.1 + 子步否证 + 时间一致性)
+
+**头部结论**：把训练预算从 220 步提到 1200 步（`60 epoch × 20 step`，
+脚本 `.scratch/n/run_long_dataonly.sh`，产物 `output/cfc_interp/long60x20`），
+held-out v400 的平均 dR2 **0.194 → 0.416**，且**输运场首次全部转正**
+（psi +0.275、Phi +0.281、omega +0.222、Z_j +0.120；rho/T_i/rho_imp/T_e 0.69–0.72；
+唯一的例外是 v_par 仍 ≈0.016）。内层 val 的 `mean_dr2`（ep58 = +0.418）与 held-out
+几乎同值 ⇒ **内层 val 划分可信**；同时发现**必须按 Gate 指标选 checkpoint**
+（最后一轮 ep60 的 omega 崩到 −0.399）⇒ 新增 `--save-best`。
+详见 pitfalls #44。
+
+**下一步（已启动）**：把 ncps CfC cell 换成**闭式 LTC 传播子**（`--cell ltc`）跑同一预算，
+对照"时间一致性"对纯 data 学习的影响。**结果（同日完成）**：
+
+| 场 | ncps（非传播子） | ltc（严格传播子） |
+|---|---:|---:|
+| psi / Phi / Z_j / omega | **+0.275 / +0.281 / +0.120 / +0.222** | +0.077 / +0.030 / +0.045 / +0.010 |
+| rho / T_i / rho_imp / T_e | **+0.701 / +0.718 / +0.718 / +0.691** | +0.479 / +0.396 / +0.508 / +0.315 |
+| **平均 dR2** | **+0.416** | **+0.210** |
+
+即：**时间一致性目前要花掉一半的精度**（`output/cfc_interp/long60x20_ltc`）。
+两个混淆项必须记住：ncps 处理器带 LSTM mixed-memory 捷径而 LTC 没有；
+LTC 每次调用只走 `rate·ts ≈ 10–20%`（时间尺度/初始化可能限制了表达力）。
+详见 pitfalls #45；结构性证据在 `tests/probe_cell_semigroup.py` /
+`tests/test_ltc_processor.py`。
+
+## 2026-10-01 (子步消融 = 否证 + 时间一致性探针)
+
+**目的**：pitfall #39 给"纯 data 学不好输运场"列了三条建议，其中 b 条（给 CfC 更多
+子步，让每步跨距接近 JOREK 的 ~50 流体步/帧）是唯一不需要新结构、可以直接消融的一条。
+本轮把它做成可实验的旋钮并量测到底。
+
+**工程**（可复用）：
+1. `src/models/cfc_interp.py`：`two_substep` 泛化为 `multi_substep`（任意 S、每窗口
+   随机/等距切分、可选 **逐子步梯度检查点**）；`step(..., sub_steps=)` 让 burn-in 也能
+   用同样的粒度；新增 `sample_split_fractions` / `deterministic_fractions`。
+2. `tests/train_cfc_interpolation.py`：`--sub-steps / --burn-in-substeps /
+   --sub-step-split / --sub-step-min / --sub-step-checkpoint / --save-best`；
+   `_evaluate` 增加 **`mean_dr2` 与逐场 `dR2`**（与 held-out Gate 同口径），
+   `--save-best` 按它选 checkpoint（不再用训练 loss 选）。
+3. `tests/eval_phase3_structure.py`：同步 `--sub-steps / --burn-in-substeps`。
+4. 新工具 `tests/probe_time_consistency.py`：时间一致性探针（见下）。
+5. 复核：`S=2, bi=1` 重跑**逐位复现**基线（`train_mse=6.4333e-04`、九项 dR2、磁轴
+   0.38/3.27/3.48 cm）⇒ 重构没有改变基线路径。单元测试 `tests/test_cfc_interp.py`
+   扩到 7 条（切分合法性、逐窗口 dt、单子步等价）。
+
+**关键量测 1（机制，pitfall #43 ①）**：ncps CfC 的 cell 在 `ts→0` 时**不趋于恒等**
+（`h_new = ff1(1−t) + t·ff2`，`t=σ(t_a·ts+t_b)`）⇒ 切细区间 ≠ 离散加密，而是多次循环更新。
+实测：一次 cell 走完 `dt` 与两次 `(α,1−α)` 的差别 = **1.03 × ‖Δu_true‖（pooled）**；
+但 **S 固定时** α ∈ [0.1,0.9] 的差异只有 0.102–0.104 ⇒ 随机 α 训练确实是有效的时间自洽正则。
+
+**关键量测 2（消融，held-out v400、15 窗口、α=0.5、20 epoch、同 seed）**：
+
+| 配置 | 平均 dR2 | psi | rho | T_i | rho_imp | T_e | 轴中位 [cm] |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **S=2, bi=1（基线）** | **+0.194** | +0.081 | +0.488 | +0.405 | +0.430 | +0.310 | **0.38** |
+| S=2, bi=2 | +0.176 | +0.017 | +0.451 | +0.381 | +0.408 | +0.297 | 0.72 |
+| S=8, bi=8 | +0.081 | −0.071 | +0.272 | +0.278 | +0.140 | +0.119 | 0.77 |
+| S=25, bi=25 | +0.027 | −0.178 | +0.220 | +0.210 | +0.116 | +0.064 | 1.06 |
+
+单调变差；唯一变好的是 psi 的 H1_rel（0.060→0.050，但 corr 0.333→0.050 ⇒ 抹平而非学会）。
+
+**结论**：#39b **撤销**（子步数不进主线，S=2 / burn-in 1 步/帧）。更重要的结构结论是
+**当前 CfC 的"时间"语义是弱的**：同一 S 内对切分不敏感、跨 S 不可替换 ⇒ 物理损失若要作用在
+任意 `t*` 上，**先要让积分器时间一致**（以 `hx` 为初值的闭式解/ODE 传播子），
+否则 physics loss 修正的是一个没有时间语义的映射。这条写进了 pitfalls #43，也是下一阶段
+网络侧的第一个待办。
+
+**进行中**：长训练（`60 epoch × 20 step`，≈1200 Adam 步；旧基线只有 220 步，且内层
+val 曲线到第 20 轮仍在改善）——用来把"能力不足"与"没训够"分开。
+
+## 2026-10-01 (口径澄清 + 纯 data 基线复现 + 一个评测 bug)
+
+**1. 用户澄清**：暂定方向是**直接用纯 data 训练**（**不做任何 JOREK 计算**）。
+我把 ADR-0017 的决策块按此更正（原来的"选项 2＝离线 JOREK 参照"是我理解偏了），
+并停掉重启实验、删除自己建的临时副本（165 MB，全为副本，原始数据未动）；
+`single_frame_restart.sh` 与 pitfalls #40/#41 的文件安全结论保留备查。
+
+**2. 纯 data 基线在当前代码下重跑：逐位复现** ✓
+（`output/cfc_interp/baseline_dataonly`，与 `gate6_deriv2` 的 `train_mse=6.4333e-04` 相同、
+`lam_phys=0.000`、`train_phys=0`、checkpoint reload exact）。
+
+**3. 抓到并修掉一个评测 bug（pitfall #42）**：修完评测脚本后，基线指标与文档**逐位一致**：
+
+| 指标 | 值 |
+|---|---|
+| psi / rho / T_i / T_e 的 **dR2** | **+0.081 / +0.488 / +0.405 / +0.310** |
+| 平均 dR2 | +0.194 |
+| 磁轴 中位 / p90 / max | **0.380 / 3.27 / 3.48 cm** |
+| H1_rel（psi / 最大） | 0.060 / 0.451 |
+
+（bug 详情：`eval_phase3_structure.py` 的 `compute_transform_stats` 漏传 `with_lap`，
+导致 Laplacian 特征被放大 1e12；训练侧一直正确，所以只有评测读数受影响。）
+
+**当前主路径（唯一）**：**纯 data 训练**，配方与指标见 `new_version.md` 的"当前基线"节。
+
+## 2026-10-01 (选项 2 首轮：重启工作流搭好，运行被两个具体障碍挡住)
+
+**已完成（可复用）**：`.scratch/n/single_frame_restart.sh`
+- 工作区**只用真实副本**（安全审查两次拦下软链方案，理由正确：JOREK 会截断
+  `jorek_restart.h5`、并以 `status='REPLACE'` 重写 `macroscopic_vars.dat`，见 pitfalls #40/#41）；
+- namelist 自动改写：`tstep_n = 0.1, nstep_n = 50`（= 一帧 dt=5.0，与 v400 的 50 步/帧一致）、
+  `adas_dir` 指向本机 ADAS；
+- 启动方式沿用已验证配方：`ulimit -s unlimited` + `OMP_NUM_THREADS=1` + `mpirun -np 1`。
+
+**运行结果与两个障碍**：
+1. **debug 构建不可用**：`jorek_model502_debug_EHL-2` 带 `-ffpe-trap=...,denormal`，
+   在 ADAS 日冕平衡初始化处 SIGFPE（pitfall #41）⇒ 已找到生产构建
+   `jorek_model502_ntor1`（ntor=1，正合纯 2D 数据）；
+2. **生产构建仍崩（exit 2）**，且日志里出现 `part02216.h5`（该文件在 run 目录里**不存在**，
+   我们的粒子重启是 `part04250.h5` 这一编号体系）⇒ 粒子重启文件的**命名/索引链**需要
+   对照 `available_restart_files.txt` 与二进制日志再定位；崩溃 backtrace 待逐帧解析。
+
+**结论**：选项 2 的**工程外壳已就绪**（安全隔离 + namelist 改写 + 单帧步数），
+剩下是**重启文件链的对接**这一具体调试项——不是路线问题。
+
+## 2026-10-01 (决策落地：物理损失暂停，恢复 data-only；基线配方写入路线图)
+
+**用户决定**：暂定走 **选项 2**（离线 JOREK 当物理参照），**物理损失先放一放**，
+训练暂时回到 **data-only**。
+
+**已落地**：
+1. **ADR-0017 增加"决策"块**：记录物理损失暂停的理由（自建演化器是结构性分裂解，收益递减）、
+   选项 2 的定位（离线、不进训练回路）、选项 1（整体隐式矩阵）另立工作项，
+   以及**遗留队列**（选项 2 的单帧重启比对、弱形式还缺的项、CfC 侧 #39 的三条）。
+2. **`new_version.md` 增加"当前基线"节**：唯一出处地写明 data-only 配方与指标——
+   命令为 `--residual --loss-scale dynamics --input-deriv2 --lambda-h1 0.01 --lambda-axis 0.3
+   --lambda-phys 0.0`（20 epoch、batch 32、dense manifest、held-out v400），
+   基线指标：平均 **dR2 +0.194**、场级 R² 0.958–0.9998、H1 ≤0.451、
+   磁轴 0.38/3.27/3.48 cm。
+3. **可复现性验证**：用当前代码（参数通道已扩到 61 维、`_condition_from_frame` 已修、
+   压强闭合已改）跑了一次 data-only 小规模训练（CPU，1 epoch × 2 batch）：
+   `train_mse=2.55e-3`、`lam_phys=0.000`、`train_phys=0`、checkpoint reload exact ✅
+   ⇒ 数据路径不受本轮物理侧改动影响，基线配方仍可直接使用。
+
+**保留的物理侧成果（将来物理损失的可用地基，不是白做）**：
+`src/physics/fem_weak.py`（P1 拉普拉斯/平行/各向异性/对流/标量刚度，均带验证）、
+`weak_vorticity.py`（弱残差 0.370 ✅）、压强 `alpha_i/alpha_e` 闭合、传导系数封顶与温度依赖、
+源项 R 权重、子步长 = `tstep`、`check_weak_laplacian/vorticity/rollout/implicit` 四个验证脚本。
+
+## 2026-10-01 (边界钉住试验 + 一个结构性判断：逐场分裂解是行不通的)
+
+**本轮试的修法**：给所有隐式求解（rho/rho_imp/n_iT_i/n_eT_e/ρv∥）**钉住边界行**
+（Dirichlet-like，对应 JOREK 对 rho/T/v_par 的 `apply_dirichlet_all`），
+理由是隐式算子里的 `A/m` 在边界节点带 `∮∇N_i·n` 通量项（我做拉普拉斯验证时掩掉了、
+但隐式求解没掩），κ∥/h² 主导时会把场抽干。
+
+**结果：仍然发散，而且更快**（子步 3 就全 NaN）。**诊断（诚实版）**：
+这不是某一个系数的错，而是**结构性**问题——我一直在做的是
+"**逐场算子分裂**"：先解密度、再解能量、再解平行动量、最后解 Φ/ω，每步之间用上一场的
+最新值。而 **JOREK 是把九个变量放进同一个隐式矩阵里同时求解**（这正是它稳定的根本原因）。
+分裂误差在刚性项（κ∥~1e4、h~1cm ⇒ 每步放大 ~1e4 量级）会被指数放大 ⇒ 无论怎么补项/钉边界，
+只要还是分裂解，就会在几个子步内炸。
+
+**已确认无误、可以保留的成果**（这些是真进展）：
+- 弱形式算子族：P1 拉普拉斯（`lap(R)=lap(Z)=0` 机器精度、与图 LSQ corr 0.995）、
+  各向异性/平行刚度、对流（弱形式）、标量系数刚度；全部在 `src/physics/fem_weak.py`；
+- 涡量方程**首次配平**（弱残差 0.370，目标带 0.05–0.8）——靠两处修正：
+  JOREK 的 `alpha_i/alpha_e` 压强闭合（氖弹丸 ⇒ alpha_i = −0.95）与压强括号的符号；
+- 传导系数的封顶/温度依赖（17×/410× bug）、源项 R 权重、子步长 = H5 的 `tstep`、
+  TG 稳定化算子、压强闭合已进正式模块；ψ 单场物理演化 dR2 0.69–0.98。
+
+**结构性判断（需要决策）**：要完成"独立物理演化"这条 Gate，只有两条路：
+1. **实现 JOREK 式的整体隐式矩阵**（九变量同步、含边界条件、耦合块），
+   即按 `mod_elt_matrix.f90` 的 `amat_ij` 1..9 组装一个 [9N×9N]（约 36k 未知数）的稀疏系统，
+   每步解一次。这是把整套 JOREK 时间推进重写一遍——工作量大但方向明确、可行性高
+   （矩阵 36k、稀疏度可控，稀疏 LU 在单机内存内）；
+2. **改用 JOREK 二进制离线生成物理参照轨迹**（每 run 跑几帧即可，不在训练回路里，
+   因此不会阻塞高频训练），用我们**已验证的弱形式算子在训练里**做物理约束与特征。
+
+⇒ 建议：**先走 2**（成本低、立刻可用、且能给我们一个"物理到底能预测到什么程度"的真实上界），
+把 1 作为后续独立工作项。
+
+## 2026-10-01 (弱形式 RHS 接入 Φ 椭圆求解 → 稳定性测试换了失败模式)
+
+**接入完成**：把已验证的弱形式组装提取成模块 **`src/physics/weak_vorticity.py`**
+（`p1_triangles` / `pressure_fields` / `weak_vorticity_rhs`），并在
+`tests/check_physics_implicit.py` 里用它替换强形式 RHS：
+```
+(1 + zeta)·A_{R³ρ}·∂u/∂t = RHS_weak          (zeta = 0.5, Gears)
+```
+模块与脚本口径一致（相对残差 **0.370**，记录帧上）。
+
+**稳定性测试结果：仍然发散，但失败模式明显不同**（子步 4 才炸，而以前更早）：
+
+| 场 | 现象 |
+|---|---|
+| `Phi` / `omega` | → nan |
+| `psi` | → 3.5e8（以前是稳定的！） |
+| `rho` / `rho_imp` | → **0.0（被抽干）** |
+| `T_i` / `T_e` | → 0.001（正好是我设的 `smooth_floor` 阈值） |
+| `v_par` | → 4.7e78 |
+
+**读法**：① Φ/ω 的炸说明弱形式 RHS 虽然"量级对了"，但**求解的边界条件/符号**还没完全对
+（JOREK 在 `u/ω` 上有 Dirichlet/鞘层条件，我现在只做了壁面 Φ=0）；
+② **`rho` 被抽干到 0** 是清晰的符号/边界症状——隐式对流算子（`∫∇N_i·(fv)`）在边界上的处理
+不当会让整体质量流出（`∮N_i f v·n` 项在开口边界不为零）；
+③ `psi` 从稳定变成发散，是因为现在每步用 `Z_j = Δ*ψ` **回写** Z_j，把 Φ/ω 的错误耦合回了感应方程。
+
+**下一步（按症状排序）**：
+1. 修隐式对流/扩散算子的**边界通量项**（现在自然边界隐含 `v·n = 0`，但壁面并非全部如此），
+   先解决 rho 被抽干；
+2. 给 `u/ω` 施加 JOREK 的 BC（壁面 Dirichlet/鞘层，开放边界自然），而不是只用 Φ=0；
+3. 只有在 Φ/ω 自洽之后，再让 `Z_j = Δ*ψ` 回写参与感应方程。
+
+## 2026-10-01 (涡量方程首次通过验收：弱残差 0.368 落进目标带)
+
+**两处根因（都在压强项上）**，修完后弱形式残差从 0.937 → **0.368**：
+
+1. **压强定义要用 JOREK 的 `alpha_i/alpha_e`**
+   （`mod_elt_matrix.f90:1369-1403`）：
+   ```
+   alpha_i = m_i/m_imp - 1 ;  alpha_e = (m_i/m_imp)*Z_imp - 1
+   Pi = (rho + rho_imp*alpha_i) Ti ; Pe = (rho + rho_imp*alpha_e) Te ; P = Pi + Pe
+   ```
+   我们原来写 `n_i = rho + rho_imp`（等价假设 `m_i/m_imp = 1`）。**氖弹丸**下
+   `m_i_over_m_imp = central_mass/20*(2/2.01455) = 0.04964` ⇒ **`alpha_i = -0.9504`**
+   ⇒ 压强里的杂质贡献**符号与量级都错了**。
+2. **压强项的括号顺序（符号）**：JOREK 是 `+R²(v_s p_t − v_t p_s) = +R³{v,p}`，
+   我最初写成了 `∇p×∇v`（差一个负号）。
+
+**修正前后（记录帧 30→31，弱形式 P1 组装）**：
+
+| 量 | 修正前 | 修正后 |
+|---|---:|---:|
+| `pressure` | 5.23e-3 | **7.97e-4** |
+| `jxb` | 1.07e-3 | 1.07e-3 |
+| 弱残差 `|LHS−RHS|` | 1.75e-3 | **6.88e-4** |
+| **相对残差** | 0.937 | **0.368** ✅（目标 0.05–0.8） |
+| LHS `(1+ζ)A_{R³ρ}∂u/∂t` | 3.85e-6 | 3.85e-6 |
+
+⇒ **涡量方程首次达到"可用于求解"的标准**（与 density 0.70、impurity 0.79、induction 0.05 同档）。
+正式模块的强形式残差也同步改善：`vorticity` 0.945 → **0.885**、`pressure` 21.6 → **1.31**。
+
+**下一步**：把**弱形式**的 `rhs_ij_2`（含 `(1+ζ)A_{R³ρ}` 的 LHS）接进 Φ 的椭圆求解，
+替换掉现在仍在用的强形式 RHS，然后跑稳定性测试——这是第一次有机会让 Φ/ω 真正自洽演化。
+
+## 2026-10-01 (弱形式涡量方程：LHS 确认 + 抓到压强定义的实质错误)
+
+**1. LHS（矩阵侧）确认**：`mod_elt_matrix.f90:1991` 的 `amat_22` 主项是
+```
+amat_22 = - R * r0_hat * (grad v . grad u) * xjac * (1 + zeta) + ...（对流/电子惯性等）
+```
+（`u` 是待求增量 `δu`，`zeta = time_evol_zeta = 0.5` for Gears）
+⇒ LHS = **`(1+ζ)·∫(R·ρ̂)∇v·∇(δu)`**，正是我已组装过的 `A_{R³ρ}` ✓ ——实现结构没问题。
+
+**2. 弱形式两侧实测**（记录帧 30→31，P1 组装，`tests/check_weak_vorticity.py`）：
+
+| 项 | rms |
+|---|---:|
+| LHS `(1+ζ)·A_{R³ρ}·∂u/∂t` | 3.85e-6 |
+| `pressure` `+R²{p,v}` | 5.23e-3 |
+| `jxb` `+{v,ψ}·Z_j` | 1.07e-3 |
+| `viscosity` | 1.80e-6 |
+| `convection` / `advection` | 2.3e-7 / 1.5e-7 |
+| 相对残差 `|LHS−RHS|/Σ|term|` | **0.848**（强形式 0.945） |
+
+读法：**惯性比力项小 ~1000 倍**（近力平衡等离子体的正常特征）⇒ 这条方程的精度取决于
+**力项之间的抵消**；而我们的 `pressure`(5.2e-3) 与 `jxb`(1.07e-3) 差 4.9 倍、**不抵消**。
+
+**3. 抓到压强定义的实质错误**（`mod_elt_matrix.f90:1369-1403`）：
+```fortran
+alpha_i = m_i/m_imp - 1
+alpha_e = (m_i/m_imp)*Z_imp - 1
+Pi0 = (r0 + rn0*alpha_i) * Ti0        ! 离子压强
+Pe0 = (r0 + rn0*alpha_e) * Te0        ! 电子压强
+P0  = Pi0 + Pe0
+```
+我们模块写的是 `n_i = ρ + ρ_imp`、`n_e = ρ + (Z_imp−1)ρ_imp`，
+**这等价于假设 `m_i/m_imp = 1`**。本装置是**氖弹丸**（`m_imp=20` vs 氘 `m_i≈2`）⇒
+`m_i/m_imp ≈ 0.0993` ⇒ **`alpha_i ≈ −0.9`**（不是 0）、`alpha_e ≈ 0.0993·Z_imp − 1`。
+再乘上 JOREK 气体类型分支（`mod_elt_matrix.f90:895-905`：`m_i_over_m_imp = central_mass/m_imp*(2/2.0145)`），
+⇒ 我们压强项里的杂质贡献**符号与量级都错了**，这最可能就是力项不抵消（差 4.9×）的主因。
+
+**下一步**：把 `alpha_i/alpha_e`（含气体类型与质量比）正确接入压强与 `n_e`，
+再重算弱形式两侧 —— 若力项抵消恢复到 ~10% 量级，残差就会落进 0.05–0.8 的目标带，
+然后 Φ 椭圆求解与稳定性测试才有意义。
+
+## 2026-09-30 (补项实施：TG 稳定化 + 源项 R 权重 + tstep 子步 → 稳定性仍未通过)
+
+**本轮真的补进去的**：
+
+1. **TG_num2 数值稳定化项**（JOREK 自己在动量方程里加的项，`TGNUM(2)=16`）：
+   弱形式是 `(∇ω×∇u)(∇v×∇u)` 形状 ⇒ 沿 `∇u` 方向的**各向异性扩散**，
+   度量 `M = [[u_y², −u_x u_y],[−u_x u_y, u_x²]]`，系数 `TG_num2/4·r0_hat·R³·Δτ²`。
+   新增 `fem_weak.build_p1_anisotropic_stiffness`（P1 各向异性刚度）并**隐式**加进 Φ 的椭圆求解。
+2. **源项 R 权重**（按 JOREK 弱形式 `v·R·source`）：杂质方程 `−R·N_imp`、密度方程 `−R·particlesource`。
+   （我们之前写的源项漏了 R 权重。）
+3. **子步长 = H5 的 `tstep`**（v400：Δt=5、tstep=0.1 ⇒ 50 子步；ang12 那个 run：Δt=2、tstep=0.2 ⇒ 10 子步），
+   这样 CFL 与 JOREK 一致。顺带修了 `_condition_from_frame` 没搬 `tstep`（channel 29）的接线 bug。
+
+**稳定性测试结果：仍然发散**（Φ 一步到 1e421 量级、rho −4.4e3）。原因明确：
+`rhs_ij_2` 的对照表里还有 **3 类项没补**，而它们恰恰决定力项之间的抵消关系：
+
+| 未补项 | 影响 |
+|---|---|
+| **压强项要用弱形式 `R²{p,v}`** | 我们仍用强形式 `2R∂_Z p`；实测与 `{ψ,Z_j}` 的相关只有 0.33、最优比例 0.047 ⇒ 力项不抵消，椭圆求解的 RHS 失衡 |
+| **电子惯性 τ_IC 三项**（`R⁴{π,ω}` 等） | 物理项，完全缺失 |
+| **来自 `−(∂_tρ+∇·(ρv))v` 的 4 个新动量项** | 完全缺失 |
+
+⇒ 结论：**必须把涡量残差整体改成"按 `rhs_ij_2` 逐项、在 P1 弱形式里组装"**，
+而不是继续往强形式上加补丁（压强项的形式差异就是证明）。这一步的所有项现在都已写在文档里，
+可以直接照抄 Fortran 表达式实现。
+
+## 2026-09-30 (逐项重写第一步：从 mod_elt_matrix.f90 抄出权威方程，列出我们的缺项)
+
+**权威来源**：`models/model502/mod_elt_matrix.f90:1489-1540`（`rhs_ij_1..9` 就是九条方程的弱形式 RHS）。
+
+**方程 2（垂直动量/涡量）的完整项**（`v` = 测试函数，`{a,b}` = 泊松括号，
+`r0_hat = R²ρ`，`vv2 = R²|∇u|²`，`p0` = 总压强）：
+
+| JOREK 项 | 含义 | 我们模块 |
+|---|---|---|
+| `−0.5·vv2·{v, r0_hat}` | 对流（动能×密度） | ✅ 有（但用强形式 `0.5{vv2,rho_hat}`） |
+| `−r0_hat·R²·ω·{u,v}` | 涡量对流 | ✅ 有（强形式） |
+| `+{v,ψ}·Z_j` | j×B（**无 R 权重**） | ✅ 有 |
+| `−visco_T·R·∇v·∇ω` | 黏性（R 在散度内） | ✅ 有（强形式） |
+| `+R²·{p, v}` | **压强项用弱形式 `R²{p,v}`** | ❌ 我们用强形式 `2R·∂_Z p` —— **形式不等价** |
+| `−τ_IC·R⁴·{π, ω}`、`−τ_IC·R³·π_y·(∇v·∇u)`、`−τ_IC·R⁴·(u_xy(π_xx−π_yy) − π_xy(u_xx−u_yy))` | **电子惯性项（τ_IC）** | ❌ **完全没有** |
+| `−TG_num2·¼·r0_hat·R³·(ω_x u_y−ω_y u_x)(v_x u_y−v_y u_x)·Δt²` 等 | **数值稳定化项（TG_num2）** | ❌ **完全没有** |
+| `−v·eps_cyl·(F0/R)·zj0_p` | 环向项（3D，`n≠0`） | — 2D 下为零 ✓ |
+| `−ζ·R·r0_hat·(∇v·∇δu)` 等 4 项 | 来自 `−(∂_tρ+∇·(ρv))v` 的新动量项 | ❌ **完全没有** |
+
+**方程 5（总密度）的源项**：
+```
+rhs_ij_5 = v·R·(particle_source + source_pellet + source_bg + source_imp)·xjac·Δt + ...
+```
+⇒ **源是四个通道之和、并且带 R 权重**。我们现在只有常数 `particlesource`（本 run = 0），
+**缺 `source_pellet`（SPI 弹丸注入）、`source_imp`、`source_bg`，也缺 R 权重** —— 这才是
+"碎片把粒子打进流体"的那一项。
+
+**方程 3/4（定义）**：`−(∇v·∇ψ + v·Z_j)/R`、`−(∇v·∇u + v·ω)·R` —— 弱形式下带 1/R 与 R 权重；
+我们的强形式 `Δ*ψ`、`Δ+Φ` 是它们的对应物 ✓（与已验证的身份一致）。
+
+**结论（下一步明确）**：涡量/密度方程的问题**不是调系数**，而是
+① 压强项要改成弱形式 `R²{p,v}`；② 补上**电子惯性 τ_IC 项**；③ 补上 `TG_num2` 稳定化项；
+④ 补上那 4 个新动量项；⑤ 密度/杂质源项补 `source_pellet`/`source_imp`/`source_bg` 与 `R` 权重。
+做法上应当**直接在弱形式（P1 测试函数）里组装这些项**，与 JOREK 的 `rhs_ij_*` 逐项对应，
+而不是继续在强形式上修修补补。
+
+## 2026-09-30 (稳定性测试报告 + 涡量方程失衡的定量证据 + 子步长按 tstep)
+
+**1. 用户提示的时间间隔问题（已量化并落实）**：每片之间的流体步数 = **dt / tstep**，
+两者 H5 里都有：
+
+| run | 步号间隔 | dt | tstep | 每片步数 |
+|---|---:|---:|---:|---:|
+| `scan_1d22_ang15_5_massloss_neon_v400` | 50 | 5.00 | **0.100** | **50** |
+| `scan_1d22_ang12_massloss_neon` | 10 | 2.00 | **0.200** | **10** |
+
+⇒ 隐式推进的子步长改为 `Δτ = tstep`（`--sub-steps` 默认 auto = dt/tstep），
+这样 CFL 才和 JOREK 自身一致。顺带修了一个接线 bug：`_condition_from_frame`
+原来只搬残差模块要用的索引，**没搬 `tstep`（channel 29）**，导致子步数读成 0。
+
+**2. 涡量方程失衡的定量证据**（在记录帧 30/31/32 上重复，结论一致）：
+
+| 项 | rms |
+|---|---:|
+| `inertia` 现写法 `∇·(r³ρ∇∂u/∂t)` | 5.03e-3 |
+| `inertia` JOREK 形式 `ρ̂·Δ+(∂u/∂t)` | 2.68e-3 |
+| `{ψ, Z_j}` | 1.94 |
+| `2R ∂p/∂Z` | **14.1** |
+
+- 两个力项**既不互相抵消也不与惯性项平衡**：`corr({ψ,Z_j}, 2R∂_p) = +0.33`，
+  最优比例 **0.047**（不是 ±1），对消后残差仍 **1.83**（原 pressure 14.1）；
+- 惯性项比力项小 **~3 个数量级**（近力平衡等离子体的典型特征）。
+⇒ 用这样的 RHS 反解 `∂u/∂t` 只能得到垃圾（实测 Φ 一步涨到 1e100）。
+
+**3. 稳定性测试状态（用户要求到这一步汇报）**：
+
+| 场 | 状态 |
+|---|---|
+| **psi** | ✅ 稳定且准确：一帧 dR2 **+0.69**，其余帧 0.97–0.98 |
+| rho / rho_imp / T_i / T_e / v_par | ❌ 未稳定（rho ~4e3 量级偏离、v_par 发散） |
+| Phi / Z_j / omega | 依赖涡量方程，被上面的失衡挡住 |
+
+**已定位并逐条修掉的阻塞链**：① 传导系数漏 `ZK_par_max` 封顶与温度依赖（17×/410×，已修）；
+② 对流中心差分显式（无条件不稳定，已隐式化 → 量级降 4 个数量级）；
+③ 冻结 Φ（已实现椭圆求解，被 ④ 挡住）；④ **涡量/平行动量方程项形式不对（当前阻塞）**。
+
+**下一步（唯一）**：按 `mod_elt_matrix.f90` 逐项重写涡量方程与平行动量方程
+（1/R 度量项、R² 权重、弱形式装配的符号/系数），**验收判据：记录数据上各项同量级、
+残差落在 0.05–0.8**（像 induction/density/impurity 那样）。
+
+## 2026-09-30 (稳定性测试：Φ 椭圆求解反而炸 —— 卡在涡量方程本身的失衡)
+
+**做到哪一步**：
+1. 查了 JOREK 的逐场 BC（`models/model502/mod_boundary_conditions.f90`）：
+   `apply_psi_BC` / `apply_current_BC` 对 ψ 和 Z_j 生效（非自由边界时）；
+   `u`/`ω` 在 `apply_dirichlet_1234` 时走 Dirichlet；限流器上有鞘层（Mach-1，`cs=sqrt(γ(Ti+Te))`）条件。
+   第一版取**壁面 Φ=0（Dirichlet）+ 开放边界自然条件**（与 `bc_natural_open=.t.` 一致），已登记为选择。
+2. 实现了 **Φ 的椭圆求解**：`L_Φ[∂u/∂t] = ∇·(r³ρ ∇∂u/∂t) = RHS_vort`
+   （弱形式 `−∫(r³ρ)∇N_i·∇f = ∫N_i RHS_vort`，P1 组装 + Dirichlet 行），
+   随后由 Φ 导出 `ω = Δ+Φ`、由 ψ 导出 `Z_j = Δ*ψ`（都用弱形式拉普拉斯 + 图梯度）。
+
+**结果：失败，而且原因明确**。解出来的 ∂u/∂t 极大，Φ 一步涨到 1e100。
+根因是**涡量方程本身没有配平**——这正是前面逐项归因量到的那件事：
+
+| 涡量方程各项 rms（记录场） | 值 |
+|---|---:|
+| `inertia`（左端，我们要求解的 ∂u/∂t 的系数项） | 3.5e-3 |
+| `pressure` | **21.6** |
+| `jxb` | **2.06** |
+| `convection` / `advection` / `viscosity` | 4.6e-4 / 5.2e-4 / 2.0e-3 |
+
+即 `pressure` 比 `inertia` 大 **6000 倍** ⇒ 用这样的 RHS 反解 ∂u/∂t 只会得到垃圾。
+（同样问题也存在于 `parallel_momentum`：`par_grad_p` 0.96 vs `d_rho_vpar_dt` 2.9e-4。）
+
+**结论 / 下一步（顺序不能颠倒）**：
+**先把涡量方程（以及平行动量方程）按 JOREK 的正确形式重写**——逐个 term 对照
+`mod_elt_matrix.f90`（含 1/R 度量项、`R²` 权重、弱形式装配的符号），确认在**记录数据**上
+各项同量级、残差可比（就像 `induction`/`density`/`impurity` 那样，残差 0.05–0.8）；
+**然后**才做 Φ 的椭圆求解；再跑稳定性测试。
+
+**当前稳定性测试状态**：ψ 稳定且准确（一帧 dR2 = +0.69，其余帧 0.97–0.98）；
+密度/温度/平行动量尚未稳定。已定位并修掉的链条：
+① 传导系数漏封顶/温度依赖（17×/410×，已修）→ ② 对流用中心差分显式（无条件不稳定，已隐式化，
+量级降 4 个数量级）→ ③ 冻结 Φ（尝试解椭圆，被方程失衡挡住，见上）。
+
+## 2026-09-30 (零维参数来源审计 + 优先级链修正 + 边界条件核对)
+
+**用户要求**：零维参数必须按 **H5 → namelist → JOREK 代码默认值** 的顺序取值；
+并注意边界条件选择。
+
+**发现的真问题（已修）**：原来 `_SPEC` 每条只声明"h5"或"namelist"，实现是
+"H5→默认"或"namelist→默认"，**跳过了中间一级**。已改成统一优先级链：
+`key 在 H5 → 取 H5；否则 namelist 有 → 取 namelist；否则 JOREK 默认`，
+provenance 照旧逐条记录。顺带修了 **H5 里布尔存成字符 'T'/'F'** 导致 `float()` 抛错的问题
+（`freeboundary` 就是这种）。
+
+**修正后的来源分布（v400 第 30 帧，61 条）**：
+`namelist 40 / h5 12 / default 6 / derived 2`。关键条目抽查：
+
+| 参数 | 来源 | 值 |
+|---|---|---|
+| `eta` / `visco` / `visco_par` / `F0` / `t_norm` / `central_density` | **h5** | 1.443e-10 / 2.4e-3 / 5e-4 / −3.3087 / 4.086e-7 / 0.8 |
+| `ZK_i_par` / `ZK_e_par` / `ZK_par_max` / `ZKpar_T_dependent` / `D_perp` / `ZK_*_perp` | **namelist** | 1.6666e5 / 4.1037e6 / 1e4 / 1 / 5e-6 / 2e-6 |
+| `T_0` / `Ti_0` / `Te_0` | **JOREK 默认** | 1e-6 / 5e-7 / 5e-7（namelist 未设） |
+| `T_min` / `T_min_neg` / `rho_min` / `rho_min_neg` | namelist | 3.2085e-4 / 3.2425e-4 / 1e-3 / 1e-3 |
+| `D_par` / `D_par_imp` | namelist | 5e-2 / 5e-2 |
+
+**边界条件核对（新增进通道的 BC 标志）**：
+
+| 设置 | 来源 | 值 | 含义 |
+|---|---|---|---|
+| `freeboundary` | **h5** | 0 | **固定边界**（非自由边界） |
+| `resistive_wall` | namelist | 0 | 无电阻壁 |
+| `bc_natural_open` + `n_open` | namelist | 1 / 1 | **开放边界用自然(Neumann)条件**（注释 `! open`） |
+| `n_limiter` | namelist | 64 | 壁由 64 点限流器几何定义 |
+
+⇒ 我们弱形式算子假设的**自然 BC** 与 `bc_natural_open=.t.` 一致 ✓（边界通量项消失）；
+但**壁/限流器节点**承载固定边界条件，所以 `boundary_mask` 目前是必要的权宜之计——
+正确做法是按 JOREK 的逐场边界条件施加约束（这是下一步做 `Φ/Z_j/ω` 椭圆求解时必须先定的事）。
+
+## 2026-09-30 (隐式对流：主要不稳定源被压住，但还有次级来源)
+
+**诊断先行**：把子步从 3 → 10 → 50 都试过，**仍然发散**（50 子步也炸），
+排除了 CFL/步长。诊断显示**密度最先指数增长**（9 个子步内 11 → 1e9）。
+⇒ 根因是**格式**：我们的对流 `−∇·(ρv)` 用中心型梯度（图 LSQ）离散，
+而**中心差分的纯对流没有数值耗散、显式无条件不稳定**。JOREK 用隐式弱形式离散，所以稳。
+
+**实现**（`src/physics/fem_weak.py: build_p1_advection` + `tests/check_physics_implicit.py`）：
+弱形式 `∫N_i ∇·(f v) = ∮N_i f v·n − ∫∇N_i·(f v)`，单元矩阵
+`adv_e[i,j] = (area_e/3)·(v_e·∇N_i)`，能量方程再叠加 `−f∇·v` 的对角项；
+然后 backward-Euler：
+```
+(I − (Δτ/m)·M_adv + (Δτ/m)·κ·A) f_new = f + (Δτ/m)·(显式项)
+```
+对 `ρ`、`ρ_imp`、`n_iT_i`、`n_eT_e`、`ρv∥` 五组量隐式求解（稀疏直接解）。
+
+**效果（v400，一帧，10 子步）**：
+
+| 量 | 纯显式 | 隐式对流后 | 参考（物理量级） |
+|---|---:|---:|---:|
+| `rho` | −1.1e7 | **−4.4e3** | ~1.1e1 |
+| `T_i`（n_iT_i 推导） | −6.3e22 | **−9.0e4** | ~4.5e-3 |
+| `psi` dR2 | +0.69 | **+0.69** | — |
+
+⇒ **量级降了约 4 个数量级**，证实"对流格式"是主要不稳定源；
+但**仍未稳定**：`v_par` 与 `rho` 继续发散 ⇒ 还有次级来源，按怀疑排序：
+① 冻结的 `Φ/Z_j/ω`（速度场 v 一直用初始帧的 Φ，误差累积）；
+② 源项与温度的强耦合（辐射/电离）；③ 能量方程里 `n` 与 `T` 的乘性耦合。
+
+## 2026-09-30 (隐式推进接上：传导项已隐式，但暴露出更多数值障碍)
+
+**实现**（`tests/check_physics_implicit.py`）：用已验证的 P1 弱形式矩阵做 IMEX——
+对流/交换/源显式，传导**隐式**：
+```
+(I + (Δτ/n)[κ⊥·A/m + (κ∥−κ⊥)·A_par/m]) T_new = T + (Δτ/n)·(显式项)
+```
+其中 `A` 是各向同性 P1 刚度、`A_par` 是沿磁力线方向 P1 刚度（新增
+`build_p1_parallel_laplacian`），κ∥ 用**已修正的封顶值**（`_effective_par_conduction`），
+稀疏直接求解（spsolve）。
+
+**结果：ψ 仍然稳定且准确（dR2 = +0.69），但其余场仍然发散**，而且这次诊断更细：
+- `rho` 也发散（−1.1e7），而密度方程**没有传导项**（只有对流 + D⊥扩散，D⊥=5e-6 显式稳定）；
+  ⇒ 发散来自**对流项（CFL）**或**冻结的代数场（Φ/Z_j/ω）与源项耦合**，不是传导。
+- 早期显式版本里 rho 同样是 −1e21，说明这是**同一个独立问题**，隐式传导并没有引入新错误。
+
+**结论**：传导这一块现在是可控的（隐式 + 封顶系数），但要完成 ADR-0017 的五场验证，
+还需要逐项解决：① 对流项 CFL（隐式或子循环）；② 冻结的 `Φ/Z_j/ω` 需要每步椭圆求解
+（否则速度场 v 用的是初始帧的 Φ，误差随时间累积）；③ 源项与温度的强耦合（辐射/电离）
+可能也需要隐式。ψ 一项已经用完整信息验证到 dR2≈0.7–0.97，说明"物理当预测器"这条路在
+每个环节都清理干净后是可行的。
+
+## 2026-09-30 (弱形式算子终于干净：三角化 + 共点节点绑定 + 壁面掩码)
+
+**做法（三步，全部完成）**：
+1. **把四边形三角化**（每单元 4 角点分成 2 个 P1 三角形）——这一步是关键：
+   双线性四边形只在平行四边形时才能精确表示线性场，而 P1 三角形恒可以；
+2. **共点节点绑定**（`cluster_coincident_nodes`，v400 合并 73 个）：等价 JOREK 给轴节点
+   共享同一组 dof（`mod_import_gvec.f90`）；
+3. **壁面掩码**（`boundary_mask`，201 节点）：弱拉普拉斯只在**内部**等于 ∇²，
+   边界上差一个 `∮N_i ∂u/∂n` 通量项（JOREK 由边界条件承担）。
+
+**验证结果（v400）**：
+
+| 检验 | 结果 |
+|---|---|
+| `lap(R)` / `lap(Z)`（内部 3851 节点） | **2.7e-11 / 2.8e-12**（机器零 ✅） |
+| 与图 LSQ 拉普拉斯对比（光滑 ψ 场） | **corr +0.9947**，rms 3.02 vs 2.95 ✅ |
+| 对称性 / 常数零空间 | ✅（nnz 27962，min eig ≥ 0） |
+| 退化三角形 | 68/7904 = 0.85%（磁轴处，自动跳过） |
+
+**重要更正（推翻我此前的说法）**：弱形式**并不能**降低节点噪声的放大。
+实测同一份噪声下 `‖Δlap‖/‖noise‖`：图 LSQ **4.9e4** vs 弱形式 **1.8e5**（弱形式更大）。
+原因是数学上的必然：**任何**一致的二阶算子都以 1/h² 放大节点噪声
+（对 h~1cm 就是 1e4 量级）。所以：
+- 弱形式真正带来的是 ①**一致性**（线性场零空间、与图算子 corr 0.995）；
+  ②**隐式推进所需的矩阵**（这是它最初的目的）；
+- "模型场传导项 137×" 这个病**不能靠弱形式解决**，它是**解码场本身在节点尺度上不光滑**；
+  真正的解法是让场的表示更光滑（低维/谱/FEM 系数解码），或对场先做受控滤波。
+
+## 2026-09-30 (轴节点绑定做了，但暴露出更根本的一层：单元几何是三次 Hermite，不是角点双线性)
+
+**已实现**（`src/physics/fem_weak.py`）：
+- `cluster_coincident_nodes`：按坐标把共点节点合并成**一个共享自由度**
+  （等价于 JOREK `mod_import_gvec.f90` 里给所有轴节点 `index(1:4)=1,2,3,4`）。
+  实测 v400 合并 **73 个共点节点**（4125 → 4052 clusters）。
+- 塌缩四边形按 **P1 线性三角形**处理（= JOREK 把塌缩方向的 `size(:,3)=size(:,4)=0` 的节点值类比）。
+
+**但结果没有继续变好**（`lap(R)` 4.5e2 → 1.7e3、`lap(Z)` 1.5e3 → 8.7e3；15% 单元被质量过滤跳过）。
+诊断出的**真正原因**：我用的单元几何是**角点坐标的双线性插值**，而 JOREK 的单元是
+**三次 Hermite**（每个节点 4 个自由度：值 + ∂/∂s + ∂/∂t + ∂²/∂s∂t，几何也用它插值）。
+在轴附近高度畸变的单元里，双线性几何与真实几何差得远 ⇒ 刚度矩阵的 Jacobian 不可信。
+
+**结论与下一步（方向已明确）**：不要在"角点坐标"上造刚度矩阵，而应复用**已验证的 Hermite 梯度机制**
+（`build_gradient_map` 那条，corr ≥0.998 的那条）来构造单元刚度：
+`A_ij = Σ_c w_c|J_c| ∇φ_i·∇φ_j`，其中 `∇φ` 用同一套 Hermite 基与 `size` 的 ±1 符号约定
+（本轮已确认 `size` 是**顶点方向符号**而非长度尺度，见上一条）；塌缩方向则照 JOREK
+把 `size(:,3)=size(:,4)=0` 的处理等价过去。做到 `lap(R)=lap(Z)=0` 之后再替换 `conduction` 并上隐式。
+
+## 2026-09-30 (用户指路：JOREK 怎么处理中央三角形 —— 顺带解开 #21 的尺度谜题)
+
+**`communication/mod_import_gvec.f90:415-480` 给出两条关键事实**：
+
+1. **`size` 数组不是长度尺度，而是"顶点方向"的 ±1**：
+   ```fortran
+   size(i_vertex,2) = dir_2           ! 由相邻顶点连线定符号
+   size(i_vertex,3) = dir_3
+   size(i_vertex,4) = size(i_vertex,2)*size(i_vertex,3)
+   ```
+   ⇒ 我们之前把 `size` 当作几何尺度来解释 `build_laplacian_map` 的偏差，方向就错了；
+   它是**符号约定**（各角的 Hermite 导数 dof 朝向）。
+2. **轴的"三角形"是塌缩四边形，处理方式是"绑自由度 + 杀塌缩方向"**：
+   ```fortran
+   if (treat_axis .and. i_rad==1) then   ! 所有轴节点共享同一组 dof
+      index(1:4) = 1,2,3,4 ; axis_node = .true.
+   ...
+   if (fix_axis_nodes .and. node%axis_node) then
+      element%size(i_vertex,3) = 0.d0    ! 塌缩方向的导数 dof 直接置零
+      element%size(i_vertex,4) = 0.d0
+   ```
+   即：**轴节点绑成一个自由度组**，并把塌缩方向的导数 dof 从单元里剔除。
+
+**据此改我们的弱形式算子**（`src/physics/fem_weak.py`）：把含重复节点的塌缩四边形
+按**P1 线性三角形**处理（三个不重复角点），正是"杀塌缩方向"在节点值上的等价做法。
+效果：`lap(R)` 1.0e4 → **4.5e2**、`lap(Z)` 3.5e4 → **1.5e3**（仍非 0）。
+
+**剩余缺口（下一步，已经有明确依据）**：JOREK 还把**所有共点的轴节点绑成同一组 dof**，
+我们目前只是把重复角点合并、但那些共点节点**仍各有自己的值**（数据里它们可能略有差异），
+于是三角形单元里仍有伪梯度。照 JOREK 的做法把共点轴节点**合并/绑定**后，`lap(R)=lap(Z)=0`
+才有望到机器量级。之后才谈替换 `conduction` 项与隐式求解。
+
+## 2026-09-30 (源项盘清 + 弱形式拉普拉斯算子：单元级已验证，网格过滤未完成)
+
+**1. "所有源项"盘清（结论：已经接完）**
+- model502 的内建源在 `models/model502/mod_sources.f90`：`particle_source`、`heat_i_source`、
+  `heat_e_source`，都是 ψ_n 的 tanh 剖面 + 可选高斯项，参数取自 namelist。
+- **实测全部 8 个 run 的 namelist**：`heatsource_i = 0.`、`heatsource_e = 0.`、
+  `particlesource = 0.` ⇒ **内建源恒为零**，本数据集里的源**只有 SPI 的五个投影**。
+- 五个投影的去向（`particles/examples/marker_spi_source.f90:535-548` 的定义）：
+  `N_imp` → 杂质密度方程（**本轮加入，且它是该方程的主导项，比其它项大 ~9×**）；
+  `rad_sink`、`dE_ion` → 电子能量方程（已在）；`Z_imp` → `n_e` 闭合（已在）；
+  `Z_eff` → 电阻率——但 model502 里对应的 `eta_coef(Z_eff)` 公式**是注释掉的**
+  （`mod_elt_matrix.f90:1135-1151`），所以**无需接入**。
+⇒ 结论：**源项已全部接入**；此前"缺源项"的判断（密度/杂质方程）只对 `N_imp` 成立，现已修正。
+
+**2. 弱形式拉普拉斯算子（③ 第一块）**
+- 新增 `src/physics/fem_weak.py`：节点值上的**双线性 FEM 刚度矩阵**（2×2 Gauss），
+  `lap(u) ≈ −(A·u)/m`（m 为集中质量）。选双线性而不是 JOREK 的三次 Hermite，是因为
+  我们预测的是**节点值**、没有导数自由度，而双线性版正好具备所需的**噪声平均**性质。
+- **单元级验证通过**：单位正方形上 `A` 与解析刚度矩阵逐项一致（0.6667/−0.1667/−0.3333…）、
+  行和为 0、集中质量 0.25 ✓。
+- **全局装配尚未干净**：`lap(R)` 应为 ~0，初测 1.0e4。定位到**退化单元**
+  （磁轴处四边形塌缩、有重复节点）；加过滤后跳过 68/3986 = **1.71%** 单元，
+  `lap(R)` 从 1.0e4 → **6.5e2**、`lap(Z)` 3.5e4 → 2.2e3 —— **量级降了 20× 但还没到 ~0**，
+  与图 LSQ 的相关性也只有 0.17。
+- **下一步（明确）**：单元质量过滤要更严（按 Jacobian 的均匀度/缩放 Jacobian 剔除
+  近退化单元），先把 `lap(R)=lap(Z)=0` 做到机器量级，再谈用它替换 `conduction` 项
+  （验收判据仍是模型/记录的传导项比值从 137× 降到 O(1)）。
+
+## 2026-09-30 (源项接入：按 marker_spi_source 的实际映射补全方程)
+
+**映射来源（照抄 JOREK，不自己发明）**：`particles/examples/marker_spi_source.f90:535-548`
+给出五个投影量的定义——`Z_imp = w·⟨P_Z⟩·timesteps`、`Z_eff = w·⟨P_Z²⟩·timesteps`、
+`N_imp = w·timesteps`（杂质粒子数源）、`rad_sink = Σ P_imp(iZ)·w·Lrad·timesteps`
+（辐射功率汇）、`dEion_dt`（电离能从电子侧抽走）。
+
+**本轮加入**：
+
+| 方程 | 新项 | 说明 |
+|---|---|---|
+| **impurity** | `+ N_imp`（记录投影） | 之前**完全缺失**——而它其实是该方程的**主导项** |
+| **density** | `+ particlesource`（namelist，channel 索引 41） | 背景粒子源；本 run 实测量级很小（1e-5 对 4e-2） |
+| electron_energy | `- dE_ion`、`+ rad_sink`（此前已有） | 与 marker 模块一致 |
+| ion_energy | `+ exchange`（已有）；**缺**离子侧电离能项 | 待补，需确认 JOREK 的对应项 |
+
+**逐项归因（`report_residual_terms.py`，v400、同一区间）**：
+
+```
+=== impurity ===
+term              recorded        model
+d_rimp_dt        3.88e-02      1.95e-02
+div_rimp_v       7.58e-02      1.36e-01
+diffusion        7.79e-03      1.10e-02
+N_imp            6.96e-01      6.96e-01      <-- 主导项，此前完全没在方程里
+RESIDUAL            0.7945        0.7788
+```
+
+⇒ **杂质方程此前缺了主导项**（`N_imp` 比其它项大 ~9×），所以它之前的"残差 0.70"是没有意义的；
+补上之后方程才物理完备。
+
+**仍未接的源项（显式登记）**：① 离子侧电离能；② `Z_eff` → 电阻率（当前用 H5 的标量 η，
+而 JOREK 的 η 是 Spitzer 的、与 `Z_eff` 相关）；③ 源项目前仍是**记录投影（教师）**，
+自生成源（源项子网络）留到闭环阶段。
+
+**③ 弱形式+隐式：本轮只完成设计，未实现**（会话预算用尽）。设计已定：
+用**已验证的一阶基**在各单元角点构造物理梯度 ⇒ 组装稀疏刚度矩阵
+`K_e = Σ_c w_c|J_c| Σ_d (∇φ_k·ê_d)(∇φ_l·ê_d)`（并联传导则用 `b̂` 方向）；
+判据是**把 `conduction` 的"模型/记录"比值从 137× 压到 O(1)**，并让隐式求解可解
+（条件数从 κ∥/κ⊥~1e11 降到可控范围）。
+
+## 2026-09-30 (灵活性②：项注册表 + 逐项归因，暴露"哪条方程根本没配平")
+
+**实现**：`model502_full_residuals(..., return_terms=True)` 现在额外返回
+`terms`（每条方程的逐项张量）与 `term_rms`（逐项 rms），残差本身改为由同一份项字典算出
+（不再各处重复列项）。新工具 `tests/report_residual_terms.py` 对同一区间同时打印
+**记录轨迹**与**模型插值轨迹**的逐项 rms → 直接看到"哪项主导残差、模型把哪项算坏"。
+
+**v400、gate6 工作点、一个区间（α=0.5，δ=0.5dt）实测**：
+
+| 方程 | 逐项 rms（记录 → 模型） | 残差（记录 → 模型） | 判读 |
+|---|---|---|---|
+| **induction** | `dpsi_dt` 1.81e-4→2.67e-4、`adv_psi` 1.75e-4→1.80e-4（`eta_Z_j` 4e-10 可忽略） | 0.051 → 0.60 | **配平良好**；模型的时间导数偏大 1.5× ⇒ 这条方程可用 |
+| **density** | `drho_dt` 3.9e-2→2.4e-2、`div_rho_v` 7.8e-2→1.4e-1、`diffusion` 1.6e-2→2.4e-2 | 0.70 → 0.80 | 三项同量级；**缺粒子源**；模型的 `div(ρv)` 偏大 1.8× |
+| **impurity** | `d_rimp_dt` 3.9e-2、`div_rimp_v` 7.6e-2、`diffusion` 7.8e-3 | 0.70 → 0.85 | 同上（缺粒子源） |
+| **ion_energy** | `conduction` **20 → 2750**、`adv` 1.19e-2、`exchange` 0.186 | 0.990 → 0.9999 | **模型场上传导项被放大 137×** ⇒ 直接印证"二阶算子放大节点噪声" |
+| **electron_energy** | `conduction` **44 → 303**，其余同量级 | 0.995 → 0.9993 | 同一病灶 |
+| **vorticity** | `pressure` **21.6**、`jxb` **2.06** vs `inertia` 3.5e-3 | 0.945 → 0.950 | **单项压倒 3–4 个数量级 ⇒ 残差无意义**，需按 JOREK 的正确形式重写 |
+| **parallel_momentum** | `par_grad_p` **0.96** vs `d_rho_vpar_dt` 2.9e-4 | 0.998 → 0.998 | 同上，量级差 3–4 个数量级 |
+
+**结论（三条，都可执行）**：
+1. **两分类**：`induction`/`density`/`impurity` 三项同量级 ⇒ 残差有意义；
+   `vorticity`/`parallel_momentum` 被单项压倒 ⇒ **在换成 JOREK 的正确形式前不能当损失用**。
+2. **能量方程的病灶被逐项定位**：不是"κ∥ 太大"（已修），而是**模型解码场的二阶导被节点噪声放大**
+   （传导项 20 → 2750）⇒ ③（弱形式）从此有直接的项级证据与验收指标。
+3. 项注册表让"缺项"显式：密度/杂质方程缺粒子源、电子能量缺（已接入但用教师投影的）辐射/电离项。
+
+## 2026-09-30 (物理模块的"灵活性"第一步：系数层对齐 JOREK，能量通道本底解饱和)
+
+**用户决定（采纳）**：**不在线调用 JOREK 二进制**——它的延迟（每帧 50 个隐式流体步 + 粒子 + MPI）
+会阻塞高频训练；二进制最多作离线参照。在线物理必须由我们自己的模块提供。
+
+**延迟实测**：我们的 Python RHS = **39 ms/次**（9 场、4125 节点、CPU；GPU 预计 1–3 ms），
+整帧（50 步）≈ **2 s**；JOREK 二进制是分钟–小时量级 ⇒ 只能离线。
+
+**本轮把"系数层"这一环做出来了**（灵活性三件套之一：系数 / 项 / 算子）：
+
+1. **抓到并修掉一个真 bug**：能量方程的并行传导系数。JOREK 用的是
+   `κ∥(T) = κ∥_0·(T/T_0)^2.5` **且被 `ZK_par_max` 封顶**（`mod_elt_matrix.f90:717-740`），
+   本装置封顶生效 ⇒ 实际 κ∥ = **1e4**；我们此前直接用 1.67e5 / 4.1e6，**超 17× / 410×**。
+2. **parameter channel 扩到 56 维**（尾部追加，旧索引不变）：
+   `ZK_par_max`、`ZKpar_T_dependent`、`Ti/Te_min_ZKpar`、`T_min`、`T_min_neg`、`rho_min`、
+   `rho_min_neg`、`ZK_{e,i}_par_neg`、`D_par`、`D_par_imp`；
+   顺带修了 **Fortran 布尔 `.t.` 解析 bug**（原来只 strip 前导点，`ZKpar_T_dependent` 一直读成 0），
+   并给帧缓存加了维度校验（参数通道扩展后自动重建，不再拿旧布局训练）。
+3. **模块内实现 JOREK 的公式**：`_effective_par_conduction`（温度依赖 + 封顶 + 低温替代值），
+   逐节点作用于 `div_par(T)`；`condition` 映射同步扩到 56 维。
+4. **验证**（`check_residual_floor_stats.py`，v400）：能量通道本底
+   **`ion_energy` 1.0000 → 0.9535、`electron_energy` 1.0000 → 0.9625**（p10/p90 0.93–0.98）
+   ⇒ **饱和（梯度为零的平台期）被打破**，能量通道从"不可用"变成"可优化"。
+   其余通道不变（induction 0.122、current_def 0.076、vorticity_def 0.192）。
+   仍偏高（~0.95）的残差指向下一批缺项：密度/杂质方程的粒子源、辐射/电离项、
+   η/ν 的温度依赖等。
+
+**灵活性三件套的评估**：① 系数层——**已做**（本轮）；② 项注册表（逐项可开关/可测量，
+用于归因与选择性入损失）——容易，1 轮；③ 弱形式算子 + 隐式推进（治节点噪声与刚性）——
+中等，1–2 轮，用已验证的一阶基组装稀疏矩阵。
+
+## 2026-09-30 (独立物理演化：ψ 通过验证；刚性项受阻，JOREK 负值机制已照抄)
+
+**1. 独立预测器测试（无网络）**：`tests/check_physics_rollout.py` —— 记录帧 k 的完整信息
+（帧系数 + 场值 + Hermite dof 场梯度）→ 只用物理 RHS 推进到帧 k+1 → 与记录比对
+（`Z_j/ω/Φ` 冻结、源用记录投影，均已登记）：
+
+| 场 | 物理 dR2 | CfC dR2 |
+|---|---:|---:|
+| **psi**（感应方程） | **+0.97**（0.69/0.98/0.97/0.97） | +0.08 |
+| rho / rho_imp / T_i / T_e / v_par | 见下（刚性） | 0.39/0.43/0.39/0.25/−0.02 |
+
+**2. 按用户指路核查 `marker_spi_source.f90` 与 model502 的负值处理**（已写入 ADR-0017）：
+流体 T/ρ 用**指数型光滑下限** `corr_neg_temp`/`corr_neg_dens`（`models/corr_neg_include.f90`，
+阈值 `T_min_neg`/`T_1`/`rho_min_neg`，并给出解析一/二阶导数供矩阵用）；
+marker/源侧用**硬下限到 0** + 除零保护（`Z_imp<0→0`、`P_tmp=max(P_tmp,0)`、
+`f=max(P·dv/P_norm,0)`）；而"RHS 负值就 stop"的检查**已被注释掉**。
+实测我们的记录投影里确实有负值（`rad_sink` −3.5e-6、`Z_eff` **−1.07**、`Z_imp` −0.18），
+已照 JOREK 规则下限到 0。
+
+**3. IMEX 隐式推进原型 + 实测瓶颈**：传导项（κ∥~1e5–1e6）改隐式、其余显式，
+隐式算子用矩阵自由 CG；温度加 JOREK 式光滑下限。**仍发散**，诊断给出确切原因：
+能量方程右端 rms **1e3–1e4**（`d(n_iT_i)/dt` 4.1e3、`d(n_eT_e)/dt` 1.2e4）而场 O(0.1)，
+条件数 κ∥/κ⊥~1e11 ⇒ **无预条件 CG 不收敛**。
+
+**下一步（明确）**：显式组装 `L`（图拉普拉斯）与 `L∥`（沿磁力线二阶导）**稀疏矩阵**
+并直接求解（4125×4125、~30 nnz/行，稀疏 LU 约 0.1–1 s/步，与 JOREK 每步解矩阵同构）；
+或实现沿磁力线的专用预条件子。之后重跑本测试，看五个刚性场能否也达到 ψ 那样的水准。
+
+## 2026-09-30 (概念回正：物理必须先当"独立预测器"通过验证 → ADR-0017)
+
+**用户指出的概念错误（成立）**：我们一直在"对神经网络的输出叠加物理残差、再调 λ"，
+而正确流程是：**物理自己从记录帧 k 演化到记录帧 k+1，再与数据比对**——
+这是纯计算+比对，没有网络介入，可以直接看到物理演化偏离数据多少并做归因。
+在物理通过这个独立验证之前，**不应进入 CfC 训练**（所以 λ 权重目前根本不需要）。
+
+**概念被偷换的时间线（已写入 `docs/adr/0017`）**：
+
+| 时间 | 文档 | 规定 | 实际发生 |
+|---|---|---|---|
+| 09-24 | **ADR-0010** | 记录帧纯数据；物理损失只在插值点；残差**必须闭合**：时间导数取 CfC **解析** `∂u/∂t`、源项取源项子网络，**不用有限差分凑时间导数** | —— |
+| 09-27 | **ADR-0013** | 因"解析导数对权重敏感易爆"，改为 `[u(t*+δ)−u(t*)]/δ − RHS = 0`，两端状态都由模型给 | **第 3 条被实质改写**：解析导数→模型两状态差分；"物理闭合条件"→"模型自轨迹自洽性检查" |
+| 09-29 | roadmap §4.1 补充 | 残留使用**教师源**（记录投影），自生成源留到 Phase 4 | 闭合性再失效：`S` 来自数据，残差既非纯数据也非闭合物理 |
+| 09-29~30 | 实现 | 残差写成**逐点强形式**（未立 ADR），只覆盖九方程子集（κ∥ 饱和、源项耦合简化） | 与 JOREK 的**弱形式**不一致，本底被算子节点噪声主导 |
+| 09-30 | 多轮 λ 扫描 | 用"记录数据残差本底"标定 λ、再按数值/梯度配平 | **在物理从未被验证为"能预测下一帧"的情况下就把它当损失用** |
+
+**首个独立预测器实验（`tests/check_physics_rollout.py`，无网络）**：
+以记录帧 `k` 的完整信息（帧系数 + 场值 + Hermite dof 给的场梯度）为初值，
+用我们的 model-502 RHS 显式推进到帧 `k+1`，与记录比对（`Z_j/ω/Φ` 冻结、源用记录投影）：
+
+| 场 | 物理演化 dR2 | CfC(gate6) dR2 |
+|---|---:|---:|
+| **psi**（感应方程） | **+0.97**（0.69/0.98/0.97/0.97） | +0.08 |
+| rho/rho_imp/T_i/T_e/v_par | **显式积分不稳定**（κ∥~1e5–1e6 ⇒ 需要隐式） | 0.39/0.43/0.39/0.25/−0.02 |
+
+⇒ ① 感应方程独立验证通过（物理比网络高一个数量级）；② 其余方程是**刚性**问题，
+必须上 **弱形式 + 隐式推进**（也正是算子噪声/梯度放大的根治办法）；
+③ 在补齐这些之前，物理损失继续关闭（λ 不设），gate6 仍是最优数据侧工作点。
+
+## 2026-09-30 (梯度配平：机制可用，但结论是"必须换弱形式残差")
+
+**做法（先测后调）**：新工具 `tests/probe_grad_scales.py` 把每个 loss 项单独反传一次，
+报 `‖∂L/∂θ‖`、两两 cos、以及 encoder/cell/decoder 分组范数。在 gate6 工作点实测：
+
+| term | loss | ‖grad‖ | enc / cell / dec |  |
+|---|---:|---:|---|---|
+| data | 1.04e-3 | **8.7e-4** | 1.3e-4 / 4.3e-4 / 7.4e-4 | |
+| phys | 7.14 | **79.4** | 26 / 61 / 44 | |
+| h1 | 3.65e-1 | 2.0e-2 | 9.0e-3 / 1.6e-2 / 8.7e-3 | |
+| axis | 1.9e-3 | 8.1e-3 | 5.4e-3 / 5.2e-3 / 2.9e-3 | |
+
+- **cos(g_data, g_phys) = 0.022**（几乎正交 ⇒ 不是方向对抗）；**‖g_phys‖/‖g_data‖ = 1.4e5**
+  （≈1/h²，h~1cm 单元）⇒ 按数值标定 λ=1.5e-5、按**梯度**标定 λ=1.1e-6，差 13×，
+  正是 gate8 "数值只占 5% 却崩掉"的原因。
+- **同一标准暴露的既有问题**：`λ_H1`（38×0.01≈0.38×）合理；**`λ_axis`（14×0.3≈4.2×）偏重**。
+
+**实现**：`--grad-balance <target> --grad-balance-every K --grad-balance-batch N`
+（每 K 步用子批 N 窗口做两次额外反传，令 `λ = target·‖g_data‖/‖g_phys‖`，EMA + 上限；
+逐 epoch 记录 `lambda_phys_effective` / `grad_ratio_phys_data`）。子批是必需的：
+全批探测在 16GB 卡上会触发 `CUDA driver error: device not ready`。
+
+**结果（gate9）**：λ 自动 1e-5 → 1.7e-5 → **3.1e-6 → 3.3e-6**，与探针预测一致 ⇒ 机制可用。
+但训练效果仍差：平均 dR2 **+0.194 → −0.167**、psi H1 0.046→0.313、物理比
+5.96/8.51/3.53 → 5.33/12.56/17.39（三个通道**全部变差**）。且 gate8（λ 大 3 倍）结果几乎相同
+⇒ **不是量级问题，是方向问题**：物理梯度推进的是数据不约束的方向，而这个方向是把
+ψ 的高频结构加上去以匹配 `Z_j` 的节点噪声（H1 爆炸即证据）。
+
+**结论**：物理损失保持关闭（gate6 仍是最优工作点），下一步必须先做**弱形式（刚度矩阵）残差**
+（单元上平均、不放大节点噪声、梯度尺度 O(1)、且是 JOREK 真正求解的形式，
+可用已验证的一阶基组装）。在那之前调 λ 没有意义。
+
+## 2026-09-30 (身份验证 + 物理损失标定 + FEM 二阶封存)
+
+**1. 二阶身份验证（回答"Z_j 是不是 Δ*ψ、ω 是不是 Δ+Φ"）**：是，且几乎只差常数因子。
+逐帧（4 帧）实测图 LSQ 算子 vs 记录通道：
+
+| 身份 | corr | 斜率 | 残差-半径相关 |
+|---|---:|---:|---:|
+| `Z_j ≈ Δ*ψ` | 0.9865–0.9867 | **0.928–0.938** | 0.03–0.06 |
+| `ω ≈ Δ+Φ` | 0.9902–0.9951 | **0.928–0.965** | 0.003–0.064 |
+
+即 `Z_j ≈ 0.93·Δ*ψ`、`ω ≈ 0.94·Δ+Φ`（~5–7% 常数幅度差 + ~1% 散布，无系统性空间偏差）。
+⇒ 定义类残差合法。
+**口径更正**：**不能**由这条推出"`Z_j`/`ω` 冗余、可降为辅助头"。补测偏差项：
+`Z_j` 的偏差占 16.6% rms、`ω` 的占 12.4%，而且**偏差比场本身粗糙 8.8×/14×**
+（粗糙度 0.359 vs 0.041、0.451 vs 0.031）⇒ 偏差主要是我们算子的节点级离散噪声，
+不是平滑物理剖面；而物理上**正是这个偏差 `η(Z_j − Δ*ψ)` 驱动 ψ 的电阻扩散**。
+所以：保留 `Z_j`/`ω` 为完整状态量，身份只用于一致性约束、回归护栏与便宜派生特征
+（闭环压成本时才考虑 7 场 + 显式保留偏差）。
+
+**2. FEM(dof) 二阶路径：封存（pitfall #21 补充）**：几何自检**不充分**（只验一阶项），
+真正的判据是解析场 `lap(R)=lap(Z)=lap(RZ)=0`、`lap(R²)=4`——当前实现给 1.9e4 / 8.5e4。
+根因在 dof↔基尺度约定（库返回的是带缩放的 Hermite 基）。已加 `RuntimeWarning`、
+docstring 标注与判定标准；**不在关键路径**（统一用已验证的图 LSQ 算子）。
+
+**3. 修掉两个真 bug**：
+① symlog 反变换的**原地写入**破坏 autograd（只在 `--lambda-phys>0` 时暴露，
+`version 4 vs 3`），已全部改为非原地（pitfall #35）；
+② `eval_phase4_physics.py` 的评估子区间与训练不一致（训练用第二子步 `δ=(1−α)dt`，
+评估用 `δ=0.2dt`）⇒ 已改为默认 `δ=(1−α)dt`（pitfall #36）。
+
+**4. 物理损失标定（gate7/gate8，负面结果但有信息量）**：在 gate6 基线上开物理损失：
+
+| 配置 | 平均 dR2 | 轴中位 | 物理比 ind/cur/vort |
+|---|---:|---:|---|
+| gate6（无物理损失） | **+0.194** | 0.38 cm | 5.96/8.51/3.53 |
+| +λ_phys 3e-3（本底归一化） | −0.035 | 0.77 cm | 5.41/9.23/8.40 |
+| +λ_phys 1e-2 | −0.01 | 0.53 cm | 5.40/9.10/8.36 |
+| +λ_phys 1e-5（按数值标定） | −0.120 | 3.03 cm | 5.33/12.56/15.52 |
+
+读法：**λ 用"数值尺度"标定不够**。1e-5 时物理项数值仅占数据项 ~5%，但仍把 psi 的
+H1_rel 从 0.046 推到 0.314、平均 dR2 打到 −0.12 ⇒ 物理项的**梯度尺度**远大于其数值尺度
+（二阶算子对解码场的高频分量放大）。这与 #27/#28 是同一个主题：**权重必须按梯度配平，
+不是按数值配平**。⇒ 下一步：测 `‖∂phys/∂θ‖ / ‖∂data/∂θ‖` 后标定 λ（或 GradNorm 式自适应权重），
+再决定 3 通道物理损失是否值得保留。
+
+## 2026-09-30 (pitfall #21 重验 + 全通道一/二阶导数特征训练)
+
+**1. #21 重验（用户要求：旧结论取自"发现大 bug 之前"）**：新工具
+`tests/check_fem_second_order.py`。两条旧结论被推翻/更正：
+
+- **几何自检现在是机器精度**：`lap(R)` rms 1.7e-11、`lap(Z)` 8.0e-12（旧的
+  "max 5.3e-2 / mean 1.2e-3 ⇒ 链式法则有 ~5% 装配误差"不成立，那条判据被早期
+  `x_dofs` 轴序类 bug 污染）。⇒ 问题不在链式法则。
+- **FEM(dof) 二阶装配仍然坏**：`lap(psi)` 的 p50 = **1.5e3**、p90 = 1.1e5（应为 ~2，
+  因为 `Z_j` rms 2.2），corr 0.047。**系统性量级错误**、不是少数退化角点
+  （98.3% 节点有贡献、中位节点也错 ~700×）。已在 `lapacian_features` docstring
+  标注"不要用"，待修。
+- **但图 LSQ 二阶算子是对的**：`Δ*ψ` vs 记录 `Z_j` **corr 0.994 / rms 2.12 vs 2.20 /
+  relL2 0.113**；`Δ+Φ` vs 记录 `omega` **corr 0.997 / relL2 0.080**。
+  ⇒ "`Z_j`/`omega` 是弱形式独立状态量、不是逐点二阶导"**结论过强**：它们数值上就是
+  逐点 `Δ*ψ`/`Δ+Φ`（~10% 差异来自 JOREK 里 `zj` 的电阻/惯性松弛，是物理的）。
+  于是：定义类残差合法，**二阶信息可以作为特征喂网络**。
+
+**2. 全通道一/二阶导数特征训练（`--input-deriv2`，36 维输入）**：
+输入 = 9 场值 + 18 一阶导（FEM dof，已验证 corr≥0.992）+ 9 二阶导（图 LSQ Laplacian）。
+新增 `RunFrameStore.laplacian_features()`（含缓存）与 `lap_mean/lap_std` 训练集统计。
+
+| 指标 | gate4（无导数） | gate5（仅一阶） | **gate6（一阶+二阶）** |
+|---|---:|---:|---:|
+| psi dR2 / corr | −0.212 / 0.217 | +0.079 / 0.342 | **+0.081 / 0.333** |
+| Phi dR2 | +0.072 | +0.055 | −0.012 |
+| Z_j dR2 | +0.011 | +0.016 | **+0.026** |
+| omega dR2 / corr | +0.022 / 0.164 | **+0.049** / 0.303 | +0.011 / 0.111 |
+| rho dR2 / corr | 0.390 / 0.650 | 0.367 / 0.758 | **0.488 / 0.800** |
+| T_i dR2 / corr | 0.387 / 0.759 | 0.333 / 0.747 | **0.405 / 0.838** |
+| rho_imp dR2 / corr | 0.444 / 0.672 | 0.406 / 0.764 | **0.430 / 0.743** |
+| T_e dR2 / corr | 0.251 / 0.702 | 0.210 / 0.754 | **0.310 / 0.783** |
+| v_par dR2 | −0.006 | −0.019 | **+0.011** |
+| **平均 dR2** | 0.151 | 0.166 | **0.194** |
+| 轴中位 / p90 / max [cm] | 0.39 / 3.43 / 3.79 | 0.45 / 3.42 / 3.55 | **0.38 / 3.27 / 3.48** |
+| 物理比 ind/cur/vort | 6.74/3.19/**1.16** | 6.52/4.01/1.43 | 5.96/**8.51**/3.53 |
+
+读法：二阶特征主要**强化热力学四个场**（corr 0.74–0.84，dR2 0.31–0.49）并让
+**v_par 首次转正**，平均 dR2 创新高 0.194；代价是 Phi/omega 略退、以及物理比变差
+（更锐利的场 ⇒ 二阶残差更大）——后者正是接下来用物理损失去压的目标。
+
+## 2026-09-30 (单位制核实 + 导数特征实验 + psi/v_par 失败模式)
+
+**1. 单位制核实（回答"都是 JOREK 单位制吗"）**：是，全链路 JOREK 内部单位，不转 SI。
+长度是**米**（`R_geo=1.11`、网格 R∈[0.4626,2.0200]、`R_axis_t=1.2237` ⇒ 磁轴 cm 标签成立）；
+时间是 **Alfvén 单位**（`t_norm=4.0858e-7 s`，帧间隔 dt≈10 ⇒ **4.1 μs**，记录跨 ~3.4–4.3 ms）；
+场量是 JOREK 归一化单位（psi_axis 0.506 / rho 以 central_density=0.8 计 / eta=1.443e-10）。
+详见 `CONTEXT.md` 的"单位制"表。
+
+**2. 导数特征实验（用户假设：给了空间梯度，对流应该自然出现）**：
+该假设**成立且有实测支持**——`{Φ,ψ}` 是一阶导数的局部函数，喂 18 个一阶导后逐点 MLP
+原理上能表示它。在新工作点上加 `--input-deriv`（`gate5_inputderiv`）：
+
+| 指标 | gate4（无导数特征） | **gate5（+一阶导数特征）** |
+|---|---:|---:|
+| psi dR2 / corr / amp | −0.212 / 0.217 / 0.726 | **+0.079 / 0.342 / 0.537** |
+| omega dR2 / corr | +0.022 / 0.164 | **+0.049 / 0.303** |
+| Z_j dR2 | +0.011 | +0.016 |
+| rho / T_i / rho_imp / T_e dR2 | 0.390/0.387/0.444/0.251 | 0.367/0.333/0.406/0.210 |
+| 平均 dR2 | 0.151 | **0.166** |
+| 物理比 ind/cur/vort | 6.74/3.19/**1.16** | 6.52/4.01/1.43 |
+| 轴中位 | 0.39 cm | 0.45 cm |
+
+⇒ 输运场（psi/omega）确实受益，但幅度有限（网络要在同一套权重里既做梯度乘积又做闭合）；
+热力学场略降（容量摊薄）。**此前 B2 消融的"导数特征无增益"结论作废**（那是在绝对参数化 +
+无动力学配平 + 全局 H1@0.7 的地基上做的）。
+
+**3. psi / v_par：用 (corr, amp) 分解替代"信号放大"**：
+`eval_phase3_structure.py` 新增 `corr` 与 `amp` 两列（`dR2 = 2·corr·amp − amp²`）。
+结论（`gate4`）：
+
+- **psi**：corr 0.217 但 amp **0.726** ⇒ 失败模式是"方向弱 + 幅度过大"，不是学不动；
+  其增量仅占自身 **1.35%**，与解码噪声底（relL2 1.3–1.5%）同量级 ⇒ **被精度底卡住**。
+  它的动力学权重已经是全通道最高（5.16），**再加权只会把误差转嫁给别的场**；
+  正确方向是降低解码噪声底（谱/FEM 低维解码）。
+- **v_par**：corr −0.03、amp 0.052 ⇒ 输出≈0（纯 persistence）。它增量占自身 9.1%（不小），
+  但局部可预测性只有 0.004 ⇒ 和平行平流/压力梯度项强相关，走 #33 同一条路（给空间信息）。
+
+## 2026-09-30 (symlog 数据契约 v2 + H1 逐场配平 + omega 归因 + Gate 收口)
+
+**1. 数据契约升到 `model502-state-v2`（symlog）**：`transform_state` 的
+`log1p(clamp(x,0))` 换成保号 symlog `sign(x)·log1p(|x|)`（反变换 `sign(y)·expm1(|y|)`），
+`data_manifest.py` / legacy `models/loss.py` / 文档同步；契约测试新增负值往返用例，
+**往返现在处处精确**（原先 rho_imp 1.68% 的噪声级负值不可逆）。
+实测：新旧变换在缓存数据上 `mean|Δ| = 1.3e-7`（负值只有 −0.002 量级），
+所以**这是正确性修复，不是性能修复**——训练指标逐位相同。
+
+**2. H1 正则项逐场配平（`--h1-global` 可退回旧行为）**：原来是全局比
+`Σ_c‖∇e_c‖²/Σ_c‖∇t_c‖²`，隐含权重 `‖∇t_c‖²` 相差 **365×**（rho+rho_imp 占 86%）。
+改成 `mean_c(‖∇e_c‖²/‖∇t_c‖²)` 后，λ_H1 的有效强度对 psi/Phi 涨了 7–8 倍，
+**必须重扫 λ**：
+
+| 配置（symlog + 残差 + 动力学配平，20 epoch） | 平均 R² | val MSE | 平均 dR2 | 轴中位 | H1_rel 最大 |
+|---|---:|---:|---:|---:|---:|
+| 旧：log1p + 全局 H1 @0.7 | 0.9845 | 0.0277 | 0.059 | 0.77 cm | 0.440 |
+| 逐场 H1 @0.7 | 0.978 | 0.0373 | −0.095 | 0.89 cm | 0.443 |
+| 逐场 H1 @0.3 | — | 0.0395 | −0.077 | 0.77 cm | 0.445 |
+| 逐场 H1 @0.1 | — | — | −0.074 | 0.77 cm | 0.449 |
+| 逐场 H1 @0.03 | — | — | 0.119 | 0.70 cm | 0.450 |
+| **逐场 H1 @0.01（新工作点）** | **0.9870** | **0.0223** | **0.151** | **0.39 cm** | 0.451 |
+| 逐场 H1 @0（关掉） | — | — | 0.138 | 0.45 cm | 0.464 |
+
+⇒ **新工作点：`--residual --loss-scale dynamics --lambda-h1 0.01 --lambda-axis 0.3`**
+（`output/cfc_interp/gate4_h1pc_0.01`）；H1 不再需要大权重，
+结构由残差参数化 + 动力学配平自己维持。
+
+**3. Gate 结果（held-out v400、15 窗口、α=0.5）**：
+
+| 判据 | 阈值 | 新工作点 |
+|---|---|---|
+| 场级 R² | ≥ 0.85 | 0.958–0.9998 ✅（且**除 v_par 外全部 ≥ persistence 基线**） |
+| H1_rel | ≤ 0.7 | ≤ 0.451 ✅ |
+| 磁轴 中位/p90/max | ≤4/6/8 cm | **0.39 / 3.43 / 3.79 cm** ✅ |
+| dR2（动力学） | > 0 | **7/9 为正**：Phi +0.072、omega +0.022、Z_j +0.011、rho +0.390、T_i +0.387、rho_imp +0.444、T_e +0.251；psi −0.212、v_par −0.006 ❌ |
+| 物理比 ind/cur/vort | — | 6.74 / 3.19 / **1.16**（vorticity 已到本底 1.16×） |
+
+**4. omega 归因（三条证据 + 结论）**：详见 `pitfalls.md` #33。要点：
+① 模型**完全没有空间耦合**（`cfc_interp.py`/`lnn_processor.py` 里没有任何
+`edge_index`/消息传递/conv），输运项不在模型类里；
+② 线性探针显示"只用本节点 9 场"的上界是 T_i 0.28 / rho 0.11，而 **Phi −0.51 / omega −0.29**；
+加记录帧一阶导数特征增益 ≤0.05；
+③ omega 的 `Δpred` 与 `Δtrue` 相关仅 0.13 却带 0.82× 幅度（`dR2=2cr−r²=−0.45`），
+且 `Δpred` 与**场本身**相关 −0.84（"按场形状漂移"）。
+**但把 H1 配平并把 λ_H1 降到 0.01 后 omega 回到 +0.02** ⇒ 主因是正则化失衡；
+空间耦合是把 omega/Phi 做到 dR2 ≫ 0 的**必要非充分**条件（下一步）。
+
+## 2026-09-30 (Phase 3 Gate 在修正后的地基上重跑：残差网络 + 动力学配平 loss)
+
+**归一化与物理性的核查结论**（回答"归一化之后物理还在不在"）：
+1. **反归一化链路是对的**：`_denormalized_states` = `destandardize` + `inverse_transform_state`，
+   物理残差始终在真实 JOREK 单位上评估；新写的 `tests/test_normalization_contract.py`
+   用契约测试把它钉死（3 个纯函数 + 2 个真实帧往返）。
+2. **但 loss 的配平错了**：z-score 空间里逐帧增量方差逐场差 **5105 倍**
+   （Phi 8.7e-1 vs psi 1.7e-4）⇒ 平 MSE 把动力学预算几乎全给了 Phi/omega。
+   已加 `--loss-scale dynamics`（`w_f = 1/E[(Δu_norm)_f²]`），目标函数即"场平均增量 R²"。
+3. 其余同类问题：H1 项 365× 失衡（rho/rho_imp 占 86%，待修，pitfalls #31）；
+   `log1p(clamp)` 使 1.7% 的 rho_imp 噪声级负值不可逆（已量化+护栏，pitfalls #32）。
+
+**Gate 重跑**（`output/cfc_interp/gate_residual_e20`：`--residual --loss-scale dynamics`
++ λ_H1=0.7 / λ_axis=0.3，dense manifest，held-out v400，20 epoch）：
+
+| 场 | R² | relL2 | H1_rel | **dR2** | \|Δ\|/\|u\| |
+|---|---:|---:|---:|---:|---:|
+| psi | 0.9998 | 0.013 | 0.033 | **+0.027** | 1.35% |
+| Phi | 0.967 | 0.182 | 0.213 | −0.015 | 18.0% |
+| Z_j | 0.994 | 0.078 | 0.440 | **+0.071** | 8.1% |
+| omega | 0.938 | 0.249 | 0.331 | −0.453 | 20.7% |
+| rho | 0.993 | 0.084 | 0.151 | **+0.321** | 10.1% |
+| T_i | 0.997 | 0.057 | 0.125 | **+0.215** | 6.4% |
+| v_par | 0.992 | 0.092 | 0.071 | −0.027 | 9.1% |
+| rho_imp | 0.992 | 0.088 | 0.154 | **+0.285** | 10.4% |
+| T_e | 0.989 | 0.103 | 0.169 | **+0.107** | 10.9% |
+
+- **原 Gate 阈值全部通过**：R² ≥ 0.85（最低 0.938）、H1 ≤ 0.7（最高 0.440）、
+  磁轴中位/p90/max = **0.77 / 3.38 / 3.75 cm**（阈值 4/6/8）。
+- **新增增量口径**：9 场中 6 场 dR2 > 0（psi/Z_j/rho/T_i/rho_imp/T_e），
+  Phi/v_par 在 0 附近，**omega 仍是 −0.45（涡量动力学没学会）**。
+- **物理比**（模型插值点残差 / 记录本底）：
+  `phase3_residual`（无配平）7.38/11.31/8.69 → **5.91 / 2.06 / 2.13**（induction/current/
+  vorticity_definition），即定义类残差已压到本底 2 倍量级。
+- 60 epoch 对照（`gate_residual_e60`）：val MSE 不再下降（0.0263 vs 0.0277），
+  psi dR2 反而 −0.20、omega 转正 +0.075 ⇒ **20 epoch 是更划算的工作点**。
+
+**新基线**：`phase3_residual`（残差网络）+ `--loss-scale dynamics`；Gate 判据＝旧阈值
+**且** dR2（增量）为主轴。下一步：H1 逐场配平（#31）、omega 通道专项、物理损失在新基线上重扫。
+
+## 2026-09-30 (Phase 4 续：本底归一化 → 残差参数化，Phase-3 基线重定)
+
+这一轮的结论按重要性排序：**① 残差参数化（新基线）② 相对残差平台期（损失形状 bug）
+③ 本底归一化 ④ 时间格式无关 ⑤ 增量指标**。
+
+**① 残差参数化（`--residual`，最重要）**：`u(t+dt) = u(t) + decode(...)`。
+诊断依据：记录场帧间只变 1.35%（psi）～20.7%（omega），而模型场级 relL2 有 7–38%，
+即**场级 MSE 里"复现输入场"占了几乎全部预算，增量信号被淹没**。
+加入 `dR2`（增量 R²，0=persistence）后发现**所有 9 个场的 dR2 都是负的**
+（psi −155、v_par −6.6、Phi −3.6…）——模型的增量预测比"什么都不变"还差，
+场级 R² 0.85–0.99 全靠"抄上一帧"。改成残差参数化后（20 epoch，同配置）：
+psi R² 0.9998 / dR2 −0.28、T_i 0.997/+0.18、rho 0.991/+0.11、T_e 0.989/+0.10、
+Z_j 0.994/+0.04、v_par 0.992/+0.03（9 场里 6 场 dR2 > 0），磁轴 3.20→**0.99 cm**，
+物理比 induction/current_definition/vorticity_definition **7.38/11.31/8.69 →
+5.95/2.29/6.73**——**比 λ_phys 扫到 0.05（把数据指标打崩）还干净**。
+⇒ 之前的物理不一致主要不是"缺物理损失"，而是**参数化把动力学表达丢了**。
+产物：`output/cfc_interp/phase3_residual`（对照 `phase3_chainfix`＝只修链长）。
+
+**② 相对残差平台期（`detach_denominator`，已默认开启）**：`|Σterm|/Σ|term|` 的值域
+上界是 1.0，在"各项互不抵消"的顶点附近**梯度为零**；学习出来的模型正落在那儿，
+所以 `induction` 在 8 次独立训练里恒等于 7.38–7.41，λ 怎么加都不动（#28）。
+冻结分母后数值不变、梯度变成加权 L1：`|∂r/∂u_end|` 提升 44×，`induction` 首次开始
+响应（7.38→6.81）。`--phys-keep-denominator` 可退回旧行为。
+
+**③ 本底归一化（`--phys-floor auto/none/<path>`）**：逐通道除以记录本底，
+λ_phys 变成"残差 = k 倍本底"的可解释量。dense 工作点扫描（λ_H1=0.7、λ_axis=0.3）：
+
+| λ_phys（归一化） | 平均 R² | induction | current_def | vorticity_def |
+|---:|---:|---:|---:|---:|
+| 0（data-only） | **0.9353** | 7.38 | 11.31 | 8.69 |
+| 0.005 | 0.9160 | 7.39 | 10.69 | 4.33 |
+| 0.01 | 0.8971 | 7.40 | 8.66 | 2.76 |
+| 0.02 | 0.8611 | 7.41 | 7.15 | 1.47 |
+| 0.05 | 0.7794 | 7.41 | 6.93 | **0.48**（低于本底=过度抹平） |
+
+  响应变单调、可解释，但**代价格外大**（平均 R² 每点残差收益 ~1.5 分），且
+  λ=0.05 时 vorticity_definition 掉到本底以下（=模型把场抹平了）。
+  `--phys-weights`（配平通道）也试了：`induction=10` 只把 induction 7.00→6.87，
+  却把平均 R² 打到 0.587 ⇒ **强行配平弱梯度通道不是答案**，答案在参数化。
+
+**④ 时间格式与文献猜测（实测否定）**：`tests/check_residual_time_scheme.py` 用同一套空间
+算子只换时间差分（后向 vs 中心）：`induction` 本底 0.177→0.164（仅 −7%），
+两条定义类通道与时间差分无关。⇒ 本底由**空间算子**支配，θ/Crank–Nicolson 不做
+（pitfalls #20 的旧猜测已更正，roadmap §4.1 同步改）。
+
+**⑤ 新增/改动的工具**：
+
+- `tests/check_residual_floor_stats.py`：逐区间本底分布（中位/p10/p90 + 逐 run）。
+- `tests/check_residual_time_scheme.py`：本底的时间 vs 空间来源拆分。
+- `tests/eval_phase4_physics.py`：模型插值点残差 vs 记录本底（信号/本底比）。
+- `tests/eval_phase3_structure.py`：新增 **dR2**（增量 R²）与 `|d|/|u|` 两列；
+  修了累加器只在 CPU 的设备 bug（`--device cuda` 之前必崩）。
+- `tests/train_cfc_interpolation.py`：`--residual`、`--phys-floor`、`--phys-weights`、
+  `--phys-keep-denominator`、逐通道残差日志（`train_phys_channels`）、
+  链长修正（第二子步改回 `(1−α)·dt`）、`source_stats` 反归一化（#25）、
+  `source` 变量遮蔽 bug（#26）。
+
+**下一步**：把 `phase3_residual` 立为新工作点，物理损失在它上面重扫（本底归一化 +
+detach 默认开），并用 dR2 作为 Gate 主轴。
+
+## 2026-09-30 (Phase 4：残差本底重做 + λ_phys 首轮 dense 扫描)
+
+**问题**：旧本底（0.134/0.077/0.231）是**一个窗口一个区间**、旧 30+1 监督口径的读数，
+不能用来标定 λ_phys。→ 重做，并改为分布口径。
+
+**新工具 `tests/check_residual_floor_stats.py`**（逐区间本底分布）：
+遍历给定 split 的每个监督区间，用**区间起始帧自己的 coefficient**（与训练器同一约定）+
+记录投影当教师源，对**记录轨迹**评估十条残差；输出中位/p10/p90 + 逐 run 分解，
+写 `.scratch/n/residual_floor_stats.json`。全 8 run 的 196 个 val 窗口 / 588 区间约 45 s（CPU）。
+
+| 通道 | 中位 | p10 | p90 | 逐 run 中位范围 |
+|---|---:|---:|---:|---|
+| `induction` | 0.422 | 0.119 | 0.677 | 0.17–0.53 |
+| `current_definition` | 0.085 | 0.074 | 0.152 | 0.07–0.15 |
+| `vorticity_definition` | 0.048 | 0.027 | 0.159 | 0.016–0.44 |
+| `vorticity` | 0.946 | 0.790 | 0.991 | ≈0.82–1.0 |
+| `density` / `impurity` | 0.686 / 0.739 | — | — | 0.56–0.85 / 0.61–0.91 |
+| `parallel_momentum` | 0.9996 | 0.952 | 1.000 | ≈1.0 |
+| `ion_energy` / `electron_energy` | 0.9996 / 1.000 | — | — | 饱和（κ∥ 支配） |
+| `charge_state` | 0.000 | 0.000 | 0.000 | 恒等式，永不进损失 |
+
+读法：三条启用通道仍是最低本底（0.05–0.42）；`induction` 本底偏高且逐 run 分散。
+
+**本底来源拆分（`tests/check_residual_time_scheme.py`，v400 45 区间）**：同一套空间算子
+只换时间差分——后向 `(u_{k+1}−u_k)/Δt` vs 中心 `(u_{k+1}−u_{k−1})/(t_{k+1}−t_{k−1})`：
+`induction` 0.177 → 0.164（**仅 −7%**），`current_definition` 0.085 → 0.091，
+`vorticity_definition` 0.206 → 0.307。⇒ **本底由空间算子支配，不是时间格式**；
+把残差改成 θ/Crank–Nicolson 收益 ≤7% 且要重构整个残差模块，**不做**（原"50 步
+Crank–Nicolson 导致本底"的猜测已在 pitfalls #20 更正）。
+
+**顺带修的两个 bug（详见 `report/pitfalls.md` #25/#26）**：
+① 残差里的投影源一直是 z-score 单位（`source_stats` 没传）——对本轮三通道无影响，但接
+能量/压力类通道前必须修，已统一修在训练器 + 两个 check/eval 脚本；
+② 训练器物理项里 `source = items[row]["source"][k+1]` 覆盖了批量张量 → **λ_phys>0 且窗口
+监督步数 >1 时必崩**（旧 30+1 每个窗口只有 1 个监督步，恰好掩盖了它）。已改名 `phys_source`；
+旧的 `output/cfc_interp/phase4_phys_0.05`（30+1 产物）改名 `phase4_phys_0.05_old30_1`。
+
+**λ_phys 首轮 dense 扫描**（λ_H1=0.7、λ_axis=0.3、held-out v400，脚本
+`.scratch/n/run_phase4_phys_sweep.sh`，新工具 `tests/eval_phase4_physics.py` 给信号/本底比）：
+
+| λ_phys | 平均 R²（9 场） | induction | current_def | vorticity_def | 末轮 train_phys |
+|---:|---:|---:|---:|---:|---:|
+| 0（`h1sweep_0.7`） | **0.9353** | 7.38 | 11.31 | 8.69 | — |
+| 0.02 | 0.9293 | 7.38 | 11.30 | 6.76 | 0.949 |
+| 0.05 | 0.9242 | 7.39 | 10.83 | 5.61 | 0.844 |
+| 0.10 | 0.9165 | 7.39 | 9.61 | 4.34 | 0.711 |
+
+（比值 = 模型在 t*→t*+ρΔt 上的残差 / 记录轨迹本底，held-out v400、18 区间。）
+
+结论：
+1. **物理项有效但不是"越大越好"**：`vorticity_definition` 近似线性响应
+   （每 +0.01 λ 约 −0.4 比值），代价是平均 R² 每 +0.05 λ 掉 ~0.9 个点；
+   `induction` **完全不响应**（恒定 7.39）；
+2. 真因已定位（pitfall #27）：三条残差对解码场的梯度尺度差 **65×**
+   （2.0e-2 → 2.2e-1 / 1.1 → 1.3 / 6.1），等权平均把 `induction` 的权重压到 ~1%；
+3. 于是 λ_phys 的"最优值"其实是在给 `vorticity_definition` 单通道调权重，
+   不可解释。**下一步（已写入 roadmap §4.1 补充二 / §4.2 补充）**：
+   物理项改成逐通道按本底归一化 `mean_c(r_c / floor_c)`（必要时再配梯度尺度权重），
+   然后重扫 λ_phys ∈ {0.02, 0.05, 0.1} 并登记 `train_phys` 曲线。
+
+## 2026-09-29 (Phase 4 第一步：残差本底与物理信号)
+
+**Roadmap 更新（§3.5 空间耦合与导数表示）**：核实到 JOREK 切片已存 4 个 Hermite dof
+（值 + ∂/∂s + ∂/∂t + ∂²/∂s∂t；psi 四分量 RMS 0.252/0.752/0.056/0.454），而我们的 parser
+只读了 dof 0；图 LSQ 梯度 2.73 ms/场 vs dof 方案微秒级。决定：① 读全 dof + 带
+`vertex/size/x`；② 写 FEM 一致导数模块（∇/Δ*/Δ+）替换图 LSQ；③ jet 输入消融 A/B/C
+（含模型解码场的反馈）；④ jet 输出头与 λ_H1 对照；⑤ (j,ω) 不替代 (ψ,Φ)，只做辅助头与
+定义类残差；⑥ 可选的磁通坐标谱分支（θ 向 FFT + ψ_n 向样条）。详见 `new_version.md` §3.5。
+
+**§3.5 执行（第一步：dof 管线 + FEM 导数）**：
+
+**`--input-deriv` A/B 消融（进行中）**：
+
+- 模型侧已完成：`CfCInterpolator(input_deriv=True)` → encoder 输入 `9 + 2×9 = 27`
+  （值 + 一阶局部导数特征），`encode(state, deriv)` 接口；默认 `False` 完全向后兼容
+  （`tests/test_cfc_interp.py` 3/3 通过）。
+- 待接线：① `RunFrameStore.derivative_features()`（用 dofs + 预计算梯度映射一次性算出
+  全部帧的 `u_deriv`，约 0.2 s/run）；② 数据集 item 与 `collate_windows` 带上 `u_deriv`；
+  ③ 训练器 `--input-deriv` 把导数特征喂给第一个子步（第二个子步暂复用同一份 = **暂无反馈**；
+  真正的反馈需要"仅值"的梯度算子，可用**预计算的图 LSQ 矩阵**做成稀疏乘法：
+  图 LSQ 对场是线性的，矩阵只需按网格算一次）。
+- 二阶算子（`Δ*`、`Δ+`）已实现但**未通过验证**（见 `report/pitfalls.md` #21），暂不进入
+  输入特征与损失；A/B 先只用一阶。
+
+**A/B 消融结果（2026-09-30）**：
+
+| 指标（held-out 13 窗口） | A：无导数特征 | B1：+导数（未归一化） | **B2：+导数（训练集标准化）** |
+|---|---:|---:|---:|
+| psi R² / H1 | 0.967 / 0.589 | 0.847 / 0.956 | **0.975 / 0.567** |
+| Phi R² / H1 | 0.869 / 0.929 | 0.657 / 0.956 | 0.853 / 0.966 |
+| omega R² / H1 | 0.897 / 0.536 | 0.735 / 0.846 | 0.862 / 0.620 |
+| rho R² | 0.948 | 0.792 | 0.932 |
+| rho_imp R² | 0.936 | 0.785 | **0.947** |
+| T_e R² | 0.922 | 0.836 | 0.898 |
+| 轴 中位 / p90 / max [cm] | 3.60 / 5.41 / 5.77 | 3.55 / 5.90 / 10.89 | **3.32 / 5.46 / 7.21** |
+
+读法：
+1. **归一化是必需的**（pitfall #22）：未归一化的导数通道把模型打崩（psi R² −12 个点）；
+   标准化后回到与 A 同级。
+2. 前馈导数特征**总体与 A 打平**：`psi`、`rho_imp` 与轴中位有正收益，但 `Phi`/`omega`/`T_e`
+   略微变差（R² −1.5~3.5 个点、H1 变差）。这与理论预期一致——教师强制下 `∇u_k` 是 `u_k`
+   的确定性函数，不提供新信息，只是省了网络容量。
+3. **真正值得做的是反馈版**：把梯度算在**模型自己解码出的** `u(t*)` 上再喂回下一步。
+   这需要一个"只吃场值"的廉价梯度算子——图 LSQ 对场是线性的，可按网格**预计算稀疏矩阵**，
+   之后每步一次乘法（GPU <0.1 ms）。
+4. 评价：A/B 的当前结论是"前馈不加分"，符合我们对信息的分析；下一轮做反馈版 C/B-fb。
+
+**反馈版地基完成（2026-09-30）**：`src/physics/grad_ops.py` 新增
+`build_gradient_operator` / `apply_gradient_operator`——图 LSQ 梯度对场是线性的，因此
+把整条算子烘成「稀疏矩阵 `A [2N,N]`（nnz 72,622，0.9 MB）+ 每节点 2×2 混合」：
+
+- 与 `compute_gradient` 数值一致（相对误差 **7.9e-6**，float32 噪声）；
+- **9 个场一次 1.56 ms**（对比逐场 2×2 求解 ≈25 ms），GPU 上预期 <0.1 ms；
+- 于是"模型自己解码出的 `u(t*)` → 现算 ∇u → 再编码"的反馈闭环在成本上完全可行。
+
+验证过程中踩到两个排序坑（行/值排序不一致、输出轴序 `[nodes,2,F]` vs `[nodes,F,2]`），
+已记入 `report/pitfalls.md` #23。
+
+下一步（反馈版实施）：把 `deriv` 的标准化统计（`deriv_mean/deriv_std`）与稀疏梯度算子
+接进 `CfCInterpolator.two_substep`（解码 `u_mid` → 稀疏算子算 ∇ → 标准化 → 重新编码 →
+第二个子步），跑 B-fb 与 A/B2 对照。
+
+**反馈版（B-fb）首跑：发散（未通过）**：
+
+| 指标 | A（无特征） | B2（前馈） | **B-fb（反馈）** |
+|---|---:|---:|---:|
+| psi R² | 0.967 | 0.975 | **0.440** |
+| Phi R² | 0.869 | 0.853 | **0.086** |
+| omega R² | 0.897 | 0.862 | **−0.456** |
+| 磁轴 中位 [cm] | 3.60 | 3.32 | **23.1** |
+| checkpoint reload | ✅ | ✅ | ✅（能跑通、保存/加载无异常） |
+
+代码路径（`make_deriv_fn` + `two_substep` 反馈分支 + 稀疏算子搬到同设备）**验证可用**，
+但训练**自激发散**。诊断与稳定化清单见 `report/pitfalls.md` #24：输入分布突变
+（burn-in/第一子步用教师导数、第二子步换模型导数）+ `expm1` 作用在早期越界解码值上形成
+正反馈。需要的稳定化：导数特征硬 clamp、教师→反馈的课程式退火、反馈支路先 stop-gradient、
+以及训前对比"模型解码场导数分布 vs 记录帧导数分布"。
+结论：**反馈版暂不进入主路径**；A/B2 结论不变（前馈与基线同级）。
+
+**反馈版量化诊断 + 稳定化（2026-09-30）**：
+
+- **诊断**（同一时刻，标准化特征空间）：模型自产导数特征整体 rms 是记录值的 **350×**；
+  `rho[dZ]` 158×、`rho_imp[dZ]` **1242×**；**34.5%** 的模型特征落在记录 1–99% 之外；
+  max|pred|=7394 vs max|true|=35.8 ⇒ "自激"机制确认，与切片数据质量无关
+  （同一批数据下 A/B2 稳定）。
+- **稳定化**（导数特征 clamp ±5σ + 教师→反馈线性退火 + stop-gradient）：ψ R² 0.44→**0.78**、
+  磁轴 23→**17 cm**，但**仍远差于 A/B2**（0.97 / 3.3–3.6 cm）。
+- **决定：反馈版不采纳**；导数特征（前馈 B2 与反馈 B-fb）都停放，主路径回到 A 配置
+  （λ_H1=0.3、λ_axis=0.3，无导数特征）。重新启用的前提写在 `pitfalls.md` #24 末尾
+  （更长退火 + 特征一致性损失 + 解码场先物理裁切再求导）。
+
+结论与下一步：导数特征这条线**到此收口**；回到主线——Phase 4 物理损失三通道
+（`induction/current_definition/vorticity_definition`）+ 真实系数 + 本底标定，
+并并行修二阶算子（#21）与 κ∥ 离散。
+
+**二阶算子诊断（2026-09-30，未通过，但病根已定位）**：
+
+- 阈值扫描：`Δ*ψ(dof)` 的 rms 随 jac 阈值单调下降（1e-6: 4.1e5 → 1e-2: 4.0），但即便在
+  量级正常的阈值上，与图 LSQ 代理的 **corr 也只有 0.05** ⇒ 不是单纯的退化角点问题。
+- **几何自检**（决定性）：对坐标 dof 求 lap 应恒为 0（ΔR=ΔZ=0），实测
+  `max|lap_geom|=5.3e-2, mean=1.2e-3` ⇒ 链式法则/组装存在 **~5% 的公式或装配误差**。
+- **金标准对比**：`Δ*ψ(dof)` vs **记录 `Z_j` 通道** corr 0.063、rms 7.8e4 vs 3.0 ——
+  同一个 ~5% 误差被 `1/J²` 放大成 1e4–1e8。
+- 结论与下一步：**先让"几何 lap == 0"到机器精度**（调试锚点），再与记录的 `Z_j`/`omega`
+  对照（而不是图 LSQ 代理）；在此之前二阶算子不进入损失/特征。
+  （`build_laplacian_map` 的退化阈值已参数化：`jac_threshold`，默认 1e-5。）
+
+**二阶算子最终结论（2026-09-30）：不需要逐点 Δ，且逐点 Δ 本身是错的目标**
+
+排查链条（全部有数值）：
+
+1. 二阶基自洽检验：`(H(s±h)−2H+H(s∓h))/h²` vs `(H_s(s+h)−H_s(s−h))/(2h)` 一致到 **1e-10** ⇒ 基没错；
+2. 一阶几何恒等式：∇R=(1,0)、∇Z=(0,1)，有效节点均值 **0.9835**，偏差全来自退化角点；
+3. 阈值 1e-2 时几何恒等式 `max|lap_geom|=3.9e-5`（基本干净、95% 节点保留）；
+4. 但 `Δ*ψ(逐点 dof)` 与**记录 `Z_j`** 仍 corr **0.05**、relL2 **1.66**。
+
+⇒ 原因是**离散语义**：Hermite 基仅 C¹，逐点二阶导跨单元不连续；而 Model 502 的
+`Z_j`/`omega` 是**弱形式下的独立状态量**（方程直接演化），不是逐点二阶导的结果。
+**因此：**
+- 逐点 Δ 算子**停止开发**（不需要，也不自洽）；
+- 模型需要的二阶信息（`Z_j`、`omega`）**已在九通道里**，直接当输入；
+- 需要补充的只是**一阶梯度**（已验证、1.5 ms/9 场）；
+- 若将来要做一致算子，走 **FEM 弱形式刚度矩阵**路线（另立工作项）。
+
+**空间动力学测试的含义（B2 已覆盖）**：`u_deriv` 正是**九个通道（含 Z_j、omega）的一阶梯度**，
+即"值 + 一阶导（含二阶信息通道）"。B2 结果 ≈ A（psi/rho_imp/轴小赢、Phi/omega/T_e 小输）⇒
+**gradient 信息的"有无"不是瓶颈**；瓶颈更可能在架构（无消息传递/容量）与监督密度
+（每窗口只有 1 个监督区间）。这条与 pitfalls #24 一起，构成导数路线的完整结论。
+
+**监督密度实验（2026-09-30）：成功，dense 成为新默认**
+
+- manifest 改为 `burn-in 10 + horizon 3`（每窗口 **3 个监督区间**、窗口 14 帧）：
+  `.scratch/n/manifest_dense.json`，1044 窗口（train 649 / val 196）；
+  已 `cp` 覆盖为默认 `.scratch/n/manifest.json`。
+- 同配置（λ_H1=0.3、λ_axis=0.3）对比（held-out v400）：
+
+| 指标 | 旧（30+1） | **dense（10+3）** |
+|---|---:|---:|
+| psi R² / H1 | 0.967 / 0.589 | **0.974 / 0.533** |
+| Phi H1 | 0.929 | **0.696** |
+| rho_imp R² / H1 | 0.936 / 0.490 | **0.954 / 0.438** |
+| T_e R² / H1 | 0.922 / 0.569 | **0.971 / 0.397** |
+| 轴 中位/p90/max [cm] | 3.60 / 5.41 / 5.77 | **3.32 / 3.90 / 4.13** |
+
+  ⇒ **监督密度是瓶颈的主因之一**，无需 GNN/分块 CfC 即可获得这一档提升；
+  **Phase-3 Gate 全部通过**（轴 ≤4/6/8 cm、H1 ≤0.7/1.0、R² ≥0.85）。
+- dense 基线上的 λ_H1 复检（λ_H1=0.1 vs 0.3，λ_axis=0.3）：0.1 全面更差
+  （psi H1 0.630 vs 0.533、rho R² 0.937 vs 0.954、T_e H1 0.489 vs 0.397、
+  轴 max 4.80 vs 4.13）⇒ **λ_H1=0.3 仍是最优点**，不需要下调。
+
+**λ_H1 全扫描（0→1.0，step 0.1，λ_axis=0.3，dense 基线）**：
+
+| λ_H1 | 平均 R² | 平均 H1 | psi H1 | Phi H1 | rho_imp R²/H1 | T_e R²/H1 | 轴 中位/p90/max [cm] |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.0 | 0.9328 | 0.593 | 0.738 | 0.825 | 0.929 / 0.602 | 0.944 / 0.562 | 3.48 / 4.24 / 4.47 |
+| 0.1 | 0.9373 | 0.521 | 0.630 | 0.781 | 0.929 / 0.481 | 0.957 / 0.489 | 3.48 / 4.08 / 4.80 |
+| 0.2 | 0.9409 | 0.490 | 0.574 | 0.740 | 0.944 / 0.454 | 0.966 / 0.433 | 3.48 / 4.08 / 4.80 |
+| 0.3 | 0.9427 | 0.466 | 0.533 | 0.696 | 0.954 / 0.438 | 0.971 / 0.397 | 3.32 / 3.90 / 4.13 |
+| 0.4 | 0.9449 | 0.444 | 0.502 | 0.659 | 0.961 / 0.407 | 0.972 / 0.383 | 3.32 / 3.90 / 4.13 |
+| 0.5 | 0.9470 | 0.429 | 0.482 | 0.636 | 0.964 / 0.385 | 0.972 / 0.378 | 3.32 / 3.90 / 4.13 |
+| 0.6 | 0.9482 | 0.417 | 0.461 | 0.615 | 0.966 / 0.368 | 0.972 / 0.374 | 3.20 / 3.90 / 4.13 |
+| **0.7** | **0.9484** | 0.408 | 0.445 | 0.595 | 0.968 / 0.360 | 0.972 / 0.371 | **3.20 / 3.77 / 4.13** |
+| 0.8 | 0.9482 | 0.401 | 0.432 | 0.580 | 0.970 / 0.353 | 0.971 / 0.369 | 3.20 / 3.77 / 4.13 |
+| 0.9 | 0.9480 | 0.395 | 0.423 | 0.569 | 0.971 / 0.345 | 0.971 / 0.366 | 3.28 / 3.77 / 4.13 |
+| 1.0 | 0.9478 | 0.390 | 0.414 | 0.562 | 0.972 / 0.338 | 0.971 / 0.363 | 3.32 / 3.99 / 4.14 |
+
+读法：
+- **平均 R² 在 λ≈0.7 达峰**（0.9484），之后基本走平（1.0 时 0.9478）；**平均 H1 单调下降**（0.593→0.390）；
+- dense 监督下"结构 vs 精度"的冲突基本消失（到 λ=1.0 的 R² 只差 0.0006），
+  但**磁轴 p90 在 λ=1.0 反而回升**（3.77→3.99 cm）⇒ 那里开始重新出现取舍；
+- **推荐工作点：λ_H1 = 0.7**（平均 R² 最高、H1 接近最优、轴三项最好），λ_axis=0.3。
+
+- `src/data/interp_dataset.py`：`read_frame_payload` 现在同时读全部 4 个 Hermite dof
+  （`u_dofs [nodes,4,var]`），`RunFrameStore` 缓存/恢复该字段（旧缓存会自动重建）；
+  `RunTopology` 新增 `size / vertex / x_dofs`（单元局部几何，供 FEM 导数使用）。
+- `src/physics/fem_derivatives.py`：`nodal_gradient`（用 dof + `size` + 单元几何在四角
+  还原 `∂u/∂R, ∂u/∂Z`，按相邻单元平均）；`shafranov_star` 暂只给一阶项占位。
+- 验证 `tests/check_fem_gradients.py`（frame 30，v400）：
+
+| 场 | 分量 | corr(FEM vs 图 LSQ) | relL2 |
+|---|---|---:|---:|
+| psi | ∂/∂R / ∂/∂Z | 0.9998 / 0.9984 | 1.7% / 5.7% |
+| T_e | ∂/∂R / ∂/∂Z | 0.9996 / 0.9983 | 3.1% / 5.9% |
+
+  即 FEM（JOREK 自己的 dof 约定）与图 LSQ 一致到 1–6%，差异正是 LSQ 的离散误差。
+  计时：当前 numpy 版 ~3 ms/场（与 LSQ 同量级，先前的"微秒级"估计偏乐观）；
+  优化路径明确——单元几何对每个 run 是**静态**的，可预计算四角的线性映射并放到 GPU 上
+  按帧求值（预期 <0.1 ms/场）。
+- **优化完成**：`build_gradient_map`（每个 run 预计算一次，2.7 ms）+
+  `nodal_gradient_torch`（按帧、**9 个场一起算**）：**0.42–0.61 ms/帧**，
+  与 numpy 参考实现的最大偏差 2.3e-5（float32 噪声）⇒ 逐场 ~0.05 ms，
+  比图 LSQ（9 场 ≈ 25 ms）快约 **50×**，完全够 jet 反馈在训练循环里逐步调用
+  （每窗口 32 步 × ~0.5 ms ≈ 16 ms 开销）。
+- 下一步：① 预计算 + GPU 化 FEM 导数；② 从 dof 补二阶算子（`Δ*`、`Δ+`）；
+  ③ jet 输入/输出消融 A/B/C（§3.5 决定 3/4）。
+
+**Roadmap 更新（2026-09-29，结构度量与损失）**：`new_version.md` 新增 §3.4
+（损失与结构度量：z-score MSE 的"拓扑错但 MSE 小"盲区、H1/梯度误差、磁轴与 ψ_n
+结构量、谱度量、积分预算、λ_H1 结构损失、Gate 增加"R² 与 H1 同时达标"）与 §4.1 补充
+（系数一律从帧 H5/parameter channel 读取；残差本底定义；真实 κ∥ 导致能量通道饱和；
+第一轮 λ_phys 只启用 induction/current_definition/vorticity_definition；κ∥ 离散工作项）。
+
+**结构指标基线（roadmap §3.4 第一步，`tests/eval_phase3_structure.py`）**：
+对 `phase3_v3` 在 held-out v400 的 13 个监督区间上评估（α=0.5，原始单位）：
+
+| field | R² | relL2 | **H1 相对误差** | 积分预算相对误差 |
+|---|---:|---:|---:|---:|
+| psi | 0.984 | 0.126 | **0.686** | −0.005 |
+| Phi | 0.899 | 0.319 | **1.226** | −0.061 |
+| Z_j | 0.956 | 0.209 | **0.783** | +0.023 |
+| omega | 0.900 | 0.316 | **0.651** | **−2.055** |
+| rho | 0.906 | 0.308 | 0.627 | −0.188 |
+| T_i | 0.985 | 0.121 | 0.420 | +0.121 |
+| v_par | 0.894 | 0.325 | 0.348 | +0.182 |
+| rho_imp | 0.907 | 0.305 | 0.538 | −0.192 |
+| T_e | 0.875 | 0.353 | 0.758 | +0.107 |
+
+**磁轴位置误差**（ψ 最大节点，与真值比）：中位 **7.2 cm**、p90 13.8 cm、max 19.8 cm。
+
+结论：用户担心的"MSE/R² 好看但拓扑错"被量化证实——`psi` R² 0.984 但梯度误差 0.69、
+磁轴偏 7 cm；`Phi` 的 H1 误差 1.23（流场结构基本不对）；`omega` 的总量误差 −206%（符号/结构
+问题）。这直接支撑 roadmap §3.4 的 Gate 更新（R² 与 H1 同时达标、轴/ψ_n 结构量入 gate）
+以及下一步的 `λ_H1` 结构损失与逐场权重。
+
+**λ_H1 消融（roadmap §3.4 第二步，GPU，20 epochs × 11 × 32）**：
+训练器新增 `--lambda-h1`（H1 结构损失 = `Σ_fields ‖∇u_pred−∇u‖²/‖∇u‖²`，批量化 edge_index
+按窗口偏移拼接；`train_h1` 写入 metrics）。
+
+| 指标（held-out 13 窗口，α=0.5） | λ_H1=0 | λ_H1=1e-2 |
+|---|---:|---:|
+| psi H1_rel | 0.6746 | **0.6481** |
+| Phi H1_rel | 1.3074 | **1.2713** |
+| Z_j / omega H1_rel | 0.7899 / 0.6821 | **0.7835 / 0.6620** |
+| rho / rho_imp H1_rel | 0.6358 / 0.5390 | **0.6150 / 0.5274** |
+| T_i / T_e H1_rel | 0.4269 / 0.7784 | **0.4134 / 0.7654** |
+| psi R² | 0.9828 | 0.9835 |
+| rho R² / rho_imp R² | 0.9019 / 0.9073 | **0.9068 / 0.9128** |
+| **磁轴误差（中位）** | 7.212e-2 m | 7.212e-2 m（**未动**） |
+
+读法：λ_H1=1e-2 让所有场的 H1 误差一致下降 ~2–3%，R² 不降（略升）；但**磁轴位置完全没动**
+——它是 ψ 的 argmax（离散拓扑量），小权重平滑项推不动。结论：结构损失方向正确但需要
+① 更大 λ_H1 的扫描；② 显式的磁轴/ψ_n 结构项（或对 ψ 通量面做 level-set 约束）；
+之后才进 Phase 4 物理损失。
+
+**λ_H1 扫描（0 / 1e-2 / 3e-2 / 1e-1，其余配置相同）**：
+
+| λ_H1 | psi H1 | Phi H1 | omega H1 | rho H1 | rho_imp H1 | T_e H1 | psi R² | rho R² | rho_imp R² | T_e R² | 轴误差中位 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.675 | 1.307 | 0.682 | 0.636 | 0.539 | 0.778 | 0.983 | 0.902 | 0.907 | 0.872 | 7.212e-2 |
+| 0.01 | 0.648 | 1.271 | 0.662 | 0.615 | 0.527 | 0.765 | 0.984 | 0.907 | 0.913 | 0.876 | 7.212e-2 |
+| 0.03 | 0.610 | 1.213 | 0.625 | 0.575 | 0.502 | 0.733 | 0.984 | 0.916 | 0.923 | 0.887 | 7.179e-2 |
+| **0.10** | **0.540** | **1.136** | **0.554** | **0.495** | **0.454** | **0.657** | 0.983 | **0.928** | **0.936** | **0.906** | **7.035e-2** |
+
+结论（重要）：在这个区间里 **H1 损失是严格收益**——H1 误差随 λ 单调下降，而 R² 不但没有
+退化反而同步上升（rho 0.902→0.928、rho_imp 0.907→0.936、T_e 0.872→0.906、omega 0.906→0.917）。
+到 λ=0.1 仍未饱和，应继续试 0.3/1.0。磁轴误差随 λ 缓慢改善（7.21→7.04 cm，p90 13.8→12.7 cm），
+但幅度远小于 H1 的改善 ⇒ 需要**显式轴/ψ_n 结构项**才能把 argmax 型拓扑量拉回来。
+下一步：① 采用 `λ_H1=0.1` 为新基线并继续上探；② 加磁轴/ψ_n level-set 软约束；
+③ 之后进 Phase 4（induction / current_definition / vorticity_definition 三通道 + 真实系数 + 本底标定）。
+
+**λ_H1 上探扩展（0.3 / 1.0）**：
+
+| λ_H1 | psi H1 | Phi H1 | rho H1 | rho_imp H1 | T_e H1 | psi R² | Phi R² | rho R² | rho_imp R² | T_e R² | 轴中位 / p90 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 0.675 | 1.307 | 0.636 | 0.539 | 0.778 | 0.983 | 0.890 | 0.902 | 0.907 | 0.872 | 7.21 / 13.8 cm |
+| 0.1 | 0.540 | 1.136 | 0.495 | 0.454 | 0.657 | 0.983 | 0.892 | 0.928 | 0.936 | 0.906 | 7.04 / 12.7 cm |
+| **0.3** | 0.477 | **0.987** | 0.474 | 0.446 | 0.581 | 0.982 | **0.901** | 0.951 | 0.953 | 0.927 | **6.99** / 17.8 cm |
+| 1.0 | **0.371** | 0.701 | **0.401** | **0.365** | **0.556** | 0.981 | 0.891 | **0.972** | **0.966** | 0.922 | **6.29** / 18.2 cm |
+
+读法：H1 随 λ 单调下降、密度/温度类 R² 继续上升（rho 0.902→0.972、rho_imp 0.907→0.966，
+λ=1.0）；但 **`Phi` 的 R² 在 λ=0.3 达峰后回落**（0.901→0.891）、`psi` R² 轻微下滑，
+**磁轴 p90 变差**（13.8→17.8→18.2 cm，中位却在改善 7.21→6.29 cm）——说明大 λ 把"典型情况"
+拉好、把"最差窗口"推向更差（结构损失在某些窗口与数据冲突）。
+**推荐工作点：λ_H1 = 0.3**（Phi R² 峰值 + H1 大幅下降 + 轴中位最好之一，p90 代价可接受）；
+λ=1.0 留作上界参考。
+仍待办：显式轴/ψ_n 软约束（解决 p90 尾部）、再进 Phase 4 物理损失。
+
+**显式磁轴软约束（λ_axis，soft-argmax 位置误差）**：训练器新增
+`--lambda-axis/--axis-temperature/--axis-scale`（`train_axis` 记入 metrics）。
+在 λ_H1=0.3 基线上加 λ_axis=1.0：
+
+| 指标 | λ_H1=0.3（无轴项） | + λ_axis=1.0 |
+|---|---:|---:|
+| **磁轴误差 中位** | 6.99 cm | **2.27 cm** |
+| **磁轴误差 p90** | 17.8 cm | **6.11 cm** |
+| **磁轴误差 max** | 20.3 cm | **10.3 cm** |
+| psi R² | 0.982 | 0.936 |
+| Phi R² / H1 | 0.901 / 0.987 | 0.858 / 0.875 |
+| rho R² | 0.951 | 0.915 |
+| T_e R² / H1 | 0.927 / 0.581 | **0.939** / **0.521** |
+
+读法：轴约束**极其有效**——中位/p90/max 全面降到 1/3（p90 从 17.8→6.1 cm，尾部问题解决），
+但 λ_axis=1.0 偏强：`psi` R² 掉 4.6 个点、psi H1 变差，`Phi` 也回落；`T_e` 反而变好。
+结论：轴项方向正确、量级需要扫（建议 0.1 / 0.3），并把"轴误差中位 + p90"正式写进 Gate。
+下一步：λ_axis 扫描定工作点 → 然后进 Phase 4。
+
+**λ_axis 扫描（全部在 λ_H1=0.3 基线上）**：
+
+| λ_axis | 轴中位 | 轴 p90 | 轴 max | psi R² | Phi R² | rho R² | rho_imp R² | T_e R² |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 6.99 cm | 17.8 cm | 20.3 cm | 0.982 | 0.901 | 0.951 | 0.953 | 0.927 |
+| 0.1 | 3.20 cm | 6.32 cm | 19.4 cm | 0.977 | 0.885 | 0.951 | 0.946 | 0.941 |
+| **0.3** | 3.60 cm | **5.41 cm** | **5.77 cm** | 0.967 | 0.869 | 0.948 | 0.936 | 0.922 |
+| 1.0 | 2.27 cm | 6.11 cm | 10.3 cm | 0.936 | 0.858 | 0.915 | 0.914 | 0.939 |
+
+**推荐工作点：λ_H1 = 0.3、λ_axis = 0.3**——轴误差三档全部 ≤ ~6 cm（max 5.8 cm 为全表最优，
+尾部彻底压住），代价是 psi R² −1.5 个点、Phi R² −3.2 个点，rho/T_e 基本不动。
+（λ_axis=0.1 的 psi/Phi R² 更好但 max 仍 19.4 cm；λ_axis=1.0 的 max 反而回到 10.3 cm。）
+
+**Phase-3 Gate 阈值（建议登记）**：轴误差 中位 ≤ 4 cm、p90 ≤ 6 cm、max ≤ 8 cm；
+逐场 H1 相对误差 ≤ 0.7（psi/rho/rho_imp/T_e）、≤ 1.0（Phi/omega）；逐场 R² ≥ 0.85。
+下一步：固定该工作点后进入 **Phase 4**（三通道物理损失 + 真实系数 + 本底标定）。
+
+**Phase 4 物理损失接线完成（2026-09-29）**：`tests/train_cfc_interpolation.py` 新增
+`--lambda-phys / --phys-windows / --phys-rho`：
+
+- `_condition_from_frame`：把帧的 44 维 parameter channel 映射到残差模块的 34 维系数布局
+  （eta/visco/visco_par/visco_par_par/ZK_i_par/ZK_e_par/D_perp/ZK_i_perp/ZK_e_perp/F0）；
+- `_physics_term`：对模型插值出的 `u(t*)`、`u(t*+δ)`（δ=ρ·dt）构造逐窗口图
+  （pos/edge_index/condition/source），调用 `model502_full_residuals`，取三通道
+  `induction + current_definition + vorticity_definition` 的均值，反传到 CfC；
+- 源项用记录的教师源；每个 batch 抽 `phys_windows` 个窗口算物理项（控制开销）。
+
+Smoke（1 epoch × 2 batch，λ_phys=0.05）：`train_phys=0.615` 正常反传、无 NaN、
+checkpoint reload 一致 ⇒ 接线正确。
+**下一步（Phase 4 正式对照）**：`λ_phys` 扫描（0.02 / 0.05 / 0.1）在 Phase-3 工作点
+（λ_H1=0.3、λ_axis=0.3）上做 **data-only vs data+physics**：比较逐场 R²/H1、磁轴误差、
+以及三通道残差在插值点的下降幅度（对照记录本底 0.134/0.077/0.231）。
+
+**首个 data+physics 对照（λ_phys=0.05，其余同工作点）**：
+
+| 指标 | data-only（λ_phys=0） | **data+physics（0.05）** |
+|---|---:|---:|
+| Phi R² / H1 | 0.869 / 0.929 | **0.876 / 0.726** |
+| omega R² / H1 | 0.897 / 0.536 | **0.915 / 0.514** |
+| psi R² / H1 | 0.967 / 0.589 | 0.965 / **0.546** |
+| rho R² / H1 | 0.948 / 0.495 | 0.938 / 0.492 |
+| rho_imp R² / H1 | 0.936 / 0.490 | 0.929 / 0.508 |
+| T_e R² / H1 | 0.922 / 0.569 | 0.920 / 0.566 |
+| 轴 中位/p90/max | 3.60 / 5.41 / 5.77 cm | 3.77 / 6.31 / **10.34 cm** |
+| 插值点 `vorticity_definition` | 2.574 | **1.452**（本底 0.231） |
+| 插值点 `current_definition` | 0.931 | 0.899（本底 0.077） |
+| 插值点 `induction` | 0.993 | 0.996（本底 0.134） |
+
+读法：物理损失**按预期起效**——`vorticity_definition`（ω=Δ+Φ 一致性）从 2.57 降到 1.45
+（−44%），对应的 `Phi` H1 从 0.929 降到 0.726（−22%）、`omega` R²/H1 同时改善；
+但 `induction` 没动、密度/杂质略差、**磁轴 max 变差到 10.3 cm**。λ_phys=0.05 偏小，
+且与轴约束存在轻微竞争。下一步：扫 λ_phys（0.1 / 0.2）、必要时回调 λ_axis；
+并把 `induction` 的"插值残差不动"作为单独的诊断项（它的本底 0.134 却给出 0.99，
+说明该项在当前离散下对模型路径不敏感）。
+
+**前置检查（物理系数分块）**：用户提示"物理系数随演化变化、窗口应按系数分块"。
+核查结果：① condition 向量确实包含 material 系数（eta/visco/visco_par/ZK_i_par/
+ZK_e_par/D_perp[…] 等，h5-first 解析）；② manifest 的 `segment_frames` 已有 `material`
+判据（`material_mask` + 相对阈值）；③ 但默认阈值 5% 太松——**697 个窗口里有 27 个跨了
+`visco` 4.3% 的变化**（0.0023→0.0024，全在 `scan_1d22_ang15_5_massloss_neon_v300`）。
+用 `--rel-threshold 0.01` 重建 manifest 后：**0 个窗口跨系数变化**、670 windows / 30 segments，
+代价是 `scan_1d22_ang15_5_v300` 切完段后**贡献 0 个窗口**（段长 < 30+1 帧）。
+**验证**：用严格分块 manifest 重训 Phase 3（`output/cfc_interp/phase3_v6_material_blocks`，
+batch 32 / 20 epochs）：val MSE 0.0858、均值 R² 0.902 —— 与未严格分块的 0.0837 / 0.905
+基本一致（噪声内）。结论：跨系数窗口是真实缺陷（已修），但**不是当前 R² 上限的主因**。
+R² 天花板更可能来自：每窗口只有 1 个监督区间（horizon=1）、loss 只在帧端点、
+以及模型容量；下一步可试 horizon>1 / 更短 burn-in 来增加监督密度。
+
+另外：物理残差 smoke 的 `F0` 已改为**从帧的 `jorek*.h5` 读取**（区间起点
+`jorek005850.h5` → -3.308745132）；其余系数（eta/visco/κ/D…）已存在于 condition 向量中，
+但残差模块目前仍用内部默认值，把它们按索引映射进 34 维 condition 是 Phase 4.1 的下一步。
+
+**Phase 4.1 第一步完成：真实系数接入**（`tests/check_phase4_residual_floor.py`）：
+帧的 44 维 parameter channel 与残差模块的 34 维布局基本同构，映射为
+`0..5 = eta/visco/visco_par/visco_par_par/ZK_i_par/ZK_e_par`、`6 = D_perp[1]`、
+`11 = D_perp_imp≈D_perp`、`12 = ZK_i_perp[1]`、`18 = ZK_e_perp[1]`、`33 = F0`（h5）。
+该帧读到 `eta=1.443e-10, visco=0.0024, visco_par=5e-4, D_perp[1]=5e-6,
+ZK_i_perp[1]=2e-6, F0=-3.308745132`。
+
+接入真实系数后的残差（同一窗口、α=0.4、ρ=0.2）：
+
+| 残差 | 记录轨迹（真实系数） | CfC 子区间 |
+|---|---:|---:|
+| induction | 0.134 | 0.981 |
+| vorticity | 0.904 | 0.585 |
+| density | 0.722 | 0.914 |
+| ion_energy | **0.9996** | 1.000 |
+| parallel_momentum | 0.987 | 0.986 |
+| impurity | 0.728 | 0.952 |
+| electron_energy | **0.9989** | 1.000 |
+| current_definition | 0.077 | 0.946 |
+| vorticity_definition | 0.231 | 4.637 |
+
+读法：真实系数下**电磁/定义类通道可直接用作物理损失**（本底 ≪ 信号：induction 0.13→0.98、
+current_definition 0.08→0.95、vorticity_definition 0.23→4.64）；而**两个能量通道的本底
+饱和到 ~1.0**，说明在接入真实系数后，能量方程的残差被"源项语义/归一化"支配——
+在把记录投影按逐流体步语义接进 `heat_e/heat_i/dE_ion/rad_sink` 之前，这两项**不能**
+作为损失项（会把噪声当信号）。下一步优先级：先修能量通道的源项接入，把本底压下来。
+
+**诊断（能量通道本底饱和的真正原因）**：核对了 `_relative_norm` 的定义
+（`|Σ terms| / Σ|term|`）与两个能量不等式的项：
+`ion_energy = d(n_i T_i)/dt + adv − cond_i − exchange`、
+`electron_energy = d(n_e T_e)/dt + adv − cond_e − ohmic + rad_sink − d_ion + exchange`。
+真实系数下 `ZK_i_par = 1.67e5`、`ZK_e_par = 4.10e6`，即**平行热导项 κ∥·div_par(T)** 量级远大于
+其它项；而我们用的是节点配点图算子（`div_par`/`lap`），对这个刚性的平行输运项**离散误差同样
+被放大**，于是分子分母同时被它主导 → 相对残差饱和到 ~1.0。这不是"源项没接"，而是
+**刚性平行输运与配点算子的离散化冲突**。
+决策：Phase 4 第一轮 λ_phys 只用 `induction / current_definition / vorticity_definition`
+（本底 ≪ 信号），`density / impurity` 作为边际项后加；**能量通道与 vorticity /
+parallel_momentum 暂时排除**，待平行算子改进（通量坐标/FEM 一致的 κ∥ 处理，或把 κ∥ 项
+从相对范数里剥离）后再启用。这是后续 Phase 4.1/4.2 的明确工作项。
+
+新增 `tests/check_phase4_residual_floor.py`：加载 Phase-3 checkpoint（`phase3_v3`），
+在 held-out v400 的一个 val 窗口上比较九方程残差的两种情况——
+(a) **记录轨迹**（`u_{k+1}` vs `u_k`，dt=25）＝残差本底；
+(b) **CfC 子区间**（`t* = α·dt`，`δ = ρ·dt`，α=0.4、ρ=0.2）＝物理信号强度。
+系数：**`F0` 从帧的 `jorek*.h5` 直接读取**（该窗口区间起点 `jorek005850.h5` → `-3.308745132`，
+与 namelist 一致；`--f0` 仅作可选覆盖）+ 模块内部默认（eta/visco/κ=1e-5 等）；
+源项用记录投影（区间内保持不变）；`p(t*)` 尚未接入（下一步）。
+
+| 残差 | 记录轨迹（本底） | CfC 子区间 |
+|---|---:|---:|
+| induction | 0.161 | 0.981 |
+| vorticity | 0.905 | 0.585 |
+| density | 0.712 | 0.904 |
+| ion_energy | 0.571 | 0.780 |
+| parallel_momentum | 0.995 | 0.989 |
+| impurity | 0.718 | 0.948 |
+| electron_energy | 0.233 | 0.214 |
+| charge_state | 0.000 | 0.000 |
+| current_definition | 0.077 | 0.946 |
+| vorticity_definition | 0.231 | 4.637 |
+
+读法：记录轨迹残差有界（≤1 → 模块在真实轨迹上自洽、本底已知）；CfC 插值出的子区间在
+`induction` / `current_definition` / `vorticity_definition` / `impurity` 上明显更差
+⇒ **物理损失有信号可抓**，这正是 Phase 4 要用的。
+Caveat：默认系数、教师源区间内恒定、未含 `p(t*)`、只测 1 个窗口。
+
+下一步（Phase 4.1/4.2）：① 用 namelist / parameter channel 组真实 34 维 condition；
+② 接入解析碎片骨干 `p(t*)`（含非局域表）与源项 `S(t*)`；③ 把 `λ_phys · Σ残差` 加进
+插值点，扫 `λ_phys`，登记 data-only vs data+physics；④ L3 消融与 L4 硬 clamp。
+
+## 2026-09-29 (Phase 3 开工：CfC 非均匀时间插值训练器)
+
+**决策对齐（ADR-0016 + roadmap）**：取消 marker→projection 反组装 gate，Eulerian 矩降级为
+Phase 4.3 闭环的可选路径；`new_version.md` 已同步（语料 8 run、§2.5 修订、§1.3 数据说明）。
+
+**新增代码**：
+
+- `src/models/cfc_interp.py`：`CfCInterpolator` = 逐节点 encoder + `JorekLNNProcessor`
+  （真实 `ncps` CfC，v0.0.2）+ 逐节点 decoder；`advance/step/two_substep` 三个接口，
+  `two_substep` 按随机 `α` 做 `α·dt` + `(1-α)·dt` 两段积分，中间潜态保留在图里（不 detach）。
+- `tests/train_cfc_interpolation.py`：Phase 3 训练器。窗口来自 `InterpolationWindowDataset`；
+  burn-in 段只用记录帧喂 hidden state（无损失）；监督段对每个记录帧区间做随机两段积分并
+  在**下一个记录帧**上算 data loss；教师源按"目标帧配对"使用（`S_{k+1}` 驱动
+  `u_k → u_{k+1}`），模式写进 checkpoint/metrics。
+- `tests/test_cfc_interp.py`：形状/可微/α 校验/`dt` 敏感性 3 个单测（通过）。
+
+**Gate 现状（smoke 规模，`output/cfc_interp/`）**：
+
+| Gate | 结果 |
+|---|---|
+| 无 NaN | ✅ `nan: False` |
+| checkpoint reload 一致 | ✅ `checkpoint_reload_exact: True`（逐位相等） |
+| α 划分自洽（val，α∈{0.25,0.5,0.75}） | ✅ 预测相对散布 **1.3% → 0.7%**（2 个 epoch） |
+| 单样本过拟合（ADR-0002） | ✅ 500 步 loss 0.562 → **5.99e-3** |
+
+放大训练（`output/cfc_interp/phase3_v1`，4 epochs × 120 windows，约 2.8 min CPU）：
+held-out（`scan_1d22_ang15_5_massloss_neon_v400`，12 个 val 窗口）归一化 MSE
+0.498 → 0.353 → 0.246 → **0.193**；α 散布 ~1.6–3.2%；无 NaN；checkpoint reload 逐位一致。
+
+逐场 **R²（原始单位，epoch 4）**：
+
+| psi | Phi | Z_j | omega | rho | T_i | v_par | rho_imp | T_e |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.936 | 0.586 | 0.871 | 0.735 | 0.888 | 0.960 | 0.780 | 0.827 | 0.839 |
+
+（均值 ≈ 0.825；最弱的是 `Phi`（流函数）与 `v_par`，与电磁/平行动量通道的刚性一致。）
+下一步：把训练规模继续放大（全 697 窗口、更多 epoch）并观察 R² 是否继续上升，
+然后进入 Phase 4（插值点物理损失，ADR-0013 的子区间积分残差）。
+
+**GPU 放大版（`output/cfc_interp/phase3_v3`，2026-09-29）**：
+
+- 沙箱内 `torch.cuda.is_available()=False`（NVML 被拦），**沙箱外可用**：RTX 5070 Ti 16 GB，
+  torch 2.11.0+cu130；训练必须在沙箱外跑（`--device cuda`）。
+- 批量化：`_batch_loss` 把一批窗口当各自独立的图（`batch_index` 区分 hidden state），
+  α 逐窗口采样；**burn-in 改为 `no_grad`**（原先 30 步全部留在 autograd 图里 → 45 GiB OOM）；
+  Phase-3 数据集加 `with_shards=False` 跳过 shard padding。
+- 配置：batch 32 窗口、latent 64 / hidden 128、20 epochs × 11 batches、lr 3e-4，
+  用时 **2 min 04 s**（CPU 上同规模要 ~13×）。
+- 结果（held-out v400，12 个 val 窗口）：val MSE **0.0837**（v1 为 0.193）；α 散布 3.6%；
+  无 NaN；checkpoint reload 逐位一致。
+
+逐场 **R²（原始单位，epoch 20）**：
+
+| psi | Phi | Z_j | omega | rho | T_i | v_par | rho_imp | T_e |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0.972 | 0.885 | 0.943 | 0.907 | 0.846 | 0.984 | 0.875 | 0.858 | 0.873 |
+
+（均值 ≈ 0.905；GPU 利用率中位 60%、p90/max **98%**、显存 4.0 GiB。）
+
+**batch 64 / 30 epochs（`output/cfc_interp/phase3_v4`）对照**：val MSE 0.0956、
+均值 R² ≈ 0.898（与 batch 32 的 0.0837/0.905 基本同级，略差）；
+显存 7.1 GiB；**利用率中位 50%（p90/max 99%）** —— 中位数没有变好，说明瓶颈已经
+不在 GPU 计算，而在 **CPU 侧的窗口拼装**（`InterpolationWindowDataset.__getitem__` +
+`collate_windows` 在 GPU 空转时串行执行）。
+下一步（利用率）：给训练循环加 `DataLoader(num_workers>0, prefetch_factor>0)` 或把窗口
+预拼装成缓存，让数据准备与 GPU 计算重叠；之后再进 Phase 4（插值点物理损失）。
+
+**DataLoader 预取实测（负结果，`output/cfc_interp/phase3_v5`）**：`num_workers=4,
+prefetch=4` 下 wall time 反而从 2m58 涨到 **4m04**，利用率中位从 50% 掉到 **34%**
+（p90 仍 99%）——worker 之间搬运窗口张量的 IPC 开销大于省下的拼装时间。可见瓶颈不是
+数据准备，而是**小模型的内核启动开销**（latent 64/hidden 128 的逐节点 MLP + 31 次串行
+cell 调用）。结论：默认 `--num-workers 0`（in-process），采用配置 = **batch 32、
+in-process 加载**（`phase3_v3`：中位 60%、峰值 98–99%、val MSE 0.0837、均值 R² 0.905）。
+若确实需要把中位利用率推到 80%+，只能从"更大的模型/更长的单次内核"入手（例如把
+latent/hidden 提到 128/256），而当前 R² 并不需要——因此这一步到此为止，转入 Phase 4。
+
+## 2026-09-29 (SPI 诊断重生成；语料收敛为 8 个 run)
+
+**语料变化**：两个 `*_v200` run 经用户核实为标注错误 + 重复数据，已从数据目录删除。
+现在剩下的纯 2D 语料是 8 个 run：
+
+```
+scan_1d21_ang12_massloss_neon        scan_1d21_ang12_massloss_neon_v300
+scan_1d22_ang12_massloss_neon        scan_1d22_ang12_massloss_neon_v300
+scan_1d22_ang15_5_massloss_neon_v300 scan_1d22_ang15_5_massloss_neon_v400
+scan_2d21_ang12_massloss_neon_v300   scan_2d21_ang15_5_massloss_neon_v300
+```
+
+manifest 与帧缓存已同步：`.scratch/n/manifest.json` 重建为 **8 runs / 29 segments /
+697 windows**（原 10/36/786），LOO 折数降为 8；`.scratch/n/frames` 中两个 v200 缓存已删。
+
+**JOREK SPI 诊断重生成（每 run 最新帧）**：
+
+- 配方：`.scratch/regen_diagno.sh`（隔离目录 = 全量软链 + 移除全部输出软链；每个 run 的
+  namelist 拷进工作区后把 `adas_dir` 统一替换为 `/home/ac_desktop/adas/adas_data/`）。
+  运行条件（缺一不可）：同一 shell 里 `ulimit -s unlimited`、`OMP_NUM_THREADS=1`、
+  `mpirun -np 1 ./jorek2_diagno_spi < jorek_namelist_spitest`（MPI 需要 socket，
+  沙箱内被拒 → 沙箱外执行）。程序结束时的 `exit=1` 只是没调 `MPI_Finalize`，产物已写完。
+- 覆盖文件：`abl_history.dat`、`fragments_position.dat`、`fragments_position_xyz.dat`、
+  `fragments_plume_total.dat` 已安装回各 run 目录；旧文件备份在
+  `.scratch/backup_diagno/<run>/`（`.orig` 后缀为覆盖前副本）。
+- 验证：8 个新 `abl_history.dat` 与各自 restart 的
+  `xtime_spi_ablation_rate/_ablation` 逐点一致（最大相对差 1e-7~5e-6，等于 ASCII
+  `e14.6` 的输出精度）；`fragments_position.dat` 与 `spi_*_arr` 在输出精度内一致
+  （R/Z/phi `f12.3`、radius `e14.6`）；`sum(spi_abl_arr)` == 对应步的总速率。
+- 副作用说明：首次批量运行时 `Ne_charge_distribution.dat` 通过软链被重写过一次；
+  已核对它与未被动过的 3 个 `ntor11_*` 目录里的同名文件 **MD5 完全相同**
+  （`a7b9e2bd…`），即内容零差异。脚本已把 `*_charge_distribution.dat` 加入
+  "写前先删软链"清单，后续不会再穿透到数据目录。
+
+## 2026-09-29 (Phase 2.3 closed; Phase 1.5.1 gate still open)
+
+**Phase 2.3 收口（ADR-0015）**：交付物 = 非局域解析骨干，学习修正暂停、仅作消融。
+
+- 登记产物：`output/fragment_dynamics/v402_analytic/metrics.json`
+  （新增 `tests/train_fragment_dynamics.py --analytic-only`，只评估并记录解析骨干）。
+- 帧粒度 gate（held-out `scan_1d22_ang15_5_massloss_neon_v400`，73 个区间）：
+  半径 MAE 1.33e-7 m、烧蚀中位比 1.019、log-corr 0.980、within-2x 90.7%、
+  总烧蚀原子数误差 +2.0%、区间中位误差 4.0%、死亡判定一致率 0.9977。
+- 学习修正（乘性烧蚀 + 加性加速度）在同一 gate 上使指标全面变差（中位比 0.52–0.66、
+  总原子量误差 −47%），原因是它拿"下一帧"记录值监督"当前帧"输入，在 50 流体步的帧
+  粒度下学到的是区间漂移。重新启用条件写在 ADR-0015。
+- 指标术语见 `report/spi-analytic-baseline.md` 开头的"术语与指标"节（中位比/log-corr/
+  within-2x/总烧蚀率比）。
+
+**Phase 1.5.1（Eulerian 矩 + 反向组装 gate）现状：gate 未通过，原因已定位到脚本层。**
+
+- 复跑 `tests/check_marker_projection_fem.py --run scan_1d22_ang15_5_massloss_neon_v400
+  --stride 10`（76 帧）：三个矩通道与记录的相关系数 0.04–0.18，`recorded/reconstructed`
+  量级约 1e-17，`rel_iqr` 4–50 —— 完全不构成"机器精度对齐"。
+- 诊断：该脚本对**所有存活 marker**求和（一帧里存活 124,801 个、Σweight = 9.4e20），
+  重建的是杂质**存量**；而 `projections*.h5` 是**逐流体步平均后的源项系数**
+  （同一帧的节点和：dE_ion −2.02、rad_sink −6.76、Z_eff −1.39e6、Z_imp −1.60e5、
+  N_imp −1.84e4，带符号），量纲与"存量"不同。两者不可直接对总量。
+- 下一步：按 `particles/diagnostics/mod_project_particles.f90` 的累积逻辑逐条复刻——
+  哪些 marker 在某子步贡献、`weight`/`n_norm`/子步长如何进入、以及 `HH(l,m)·size(l,m)`
+  的组装——再与 `projections*.h5` 对机器精度；在此之前不进入 Phase 1.5.2/训练。
+- 两个辅助事实（同一帧核查）：`part*.h5` 的 `time` 是 **SI 秒**（0.0039677 s ≈ 9712 JOREK
+  单位），而 `jorek*.h5` 的 `t_now` 是 JOREK 单位，跨文件必须先换算；该帧的 `t_birth`
+  全为 0，**不能**用出生时间筛选"本步注入的 marker"，贡献判据必须以
+  `mod_project_particles.f90` 的 source/权重逻辑为准。
+
+配方已追通并落成参考文档 `report/marker-projection-recipe.md`：
+
+- 链路四步：(A) 逐粒子累积 `HH·size·f·weight`（`marker_spi_source.f90` ~615-650）；
+  (B) 除以 `rhs_gather_time = n_steps*timesteps`（~443/670-676，记录的是**区间时间平均**）；
+  (C) `project_only` 解 FEM 投影系统（质量矩阵 + namelist 滤波项）；
+  (D) `save_to_h5` 把解出的节点系数写进 `projections*.h5`。**记录值是解，不是 RHS。**
+- 已实现：(A) 的三个密度通道 + (B) 的归一化 —— `src/data/marker_projection.py`
+  （bicubic Hermite 基函数、`HH·size`、`1/n_norm`、无效粒子跳过），单测
+  `tests/test_marker_projection.py`。数值抽查（v400/jorek006000，`n_norm=0.8e20`）：
+  RHS 和 Z_eff 3.78e2 / Z_imp 4.72e1 / N_imp 6.51e0，而记录的节点系数和是
+  -1.39e6 / -1.60e5 / -1.84e4 —— 量级差正来自"解 vs RHS"。
+- 未实现（下一步）：`models/element_matrix_projection.f90` 的质量矩阵（含 filter 项）、
+  求解、以及与 `M·x_recorded` 的逐帧比对；两个能量通道还需要 ADAS 电荷态更新与辐射函数。
+- 投影系统的规模已核实（见 `report/marker-projection-recipe.md` §8）：未知量
+  `2×n_nodes×n_degrees = 33,000`（n=0 谐波，5 个右端列），结构非零约 1.0e6；
+  矩阵在 `new_projection` 时组装一次、用 MUMPS/PaStiX/Strumpack 分解一次，之后每帧
+  只做回代（毫秒级）。gate 验证阶段不需要求解，只要 `M·x_recorded` 与组装的 RHS
+  比对即可（稀疏矩阵-向量乘）。
+- 质量矩阵基项与 gate 脚本已落地（`basis_2d_cubic_derivatives`、
+  `tests/check_projection_gate.py`），但**尚未通过**：`M·x_recorded` 比组装 RHS 小约
+  两个数量级。已确认记录值是求解结果（`project_only` 把 `y_tmp` 写进 `node%values`）、
+  单元几何可重建角点、`element%size` 是"值 dof=1 / 导数 dof~1e-2..1e-4"的有符号张量。
+  待排除项按序：矩阵拷贝的 `×TWOPI/n_plane`、顶点↔(s,t) 顺序、
+  `scaling_integral_weights*integral_weights` 修正、以及帧内 81 个子步的累积语义
+  （RHS 用子步 `i_elm_old`/逐步电荷态，而快照只有帧末值）。详见配方文档 §9。
+- 第二轮复查（配方文档 §9.1）：`scaling_integral_weights` 只在 `do_zonal` 分支生效 →
+  **排除**；`n_plane=1` → 矩阵带 `2π`、RHS 不带 → 已加入比对；顶点↔(s,t) 顺序确认为
+  标准顺序；并修掉一个真 bug（HDF5 `x` 是 `[dim,dof,node]`，局部单元需 `[vertex,dof]`，
+  之前几何映射被转置）。修完后仍是量级差：源区单元 `||M x_rec||/||b|| ≈ 1.2e-5`。
+  用 logfile 的 `Total generated electrons`（电子源速率）做无 FEM 标量锚点：
+  记录 3.51e21 s^-1 vs 本仓库 `Σw⟨Z⟩/gather` 1.67e28 s^-1（差 ~4.8e6，与 gate 缺口同量级）。
+  **结论：缺口在 marker 侧归一化链（`weight` 的单位/用法），不在 FEM 组装。**
+  下一步先用该标量锚点把 `weight`/`n_norm` 定死，再回到逐单元 gate。
+- 第三轮（配方文档 §9.2）：**marker 权重已证明正确**——logfile 的
+  `Total generated electrons` 就是 `Σ_p weight·⟨Z⟩`（index 6000：log 6.8384e21 vs
+  本仓库 6.843e21，差 0.07%）。同时定位到我自己的归一化错误：密度通道里
+  `Z_imp=w⟨Z⟩·timesteps` 与 `1/(n_steps·timesteps)` 相消，RHS 应为
+  `Σ_p HH·size·w·{1,⟨Z⟩,⟨Z²⟩}/n_norm`，**不除 gather time**（已修）。
+  修完后 `median ||M x_rec||/||b|| ≈ 1.4e3` 且 `x_rec` 与局部 `M⁻¹b` 无相关，
+  说明除归一化外矩阵/RHS 结构仍有差异；下一步优先做全局系统（含 n=0 的 cos/sin
+  配对与 Dirichlet 消元）或直接用 run 目录里的 `jorek2_diagno_spi` 做受控对照。
+- **JOREK 诊断二进制打通（2026-09-29）**：在 `.scratch/diagno_probe2` 用
+  `jorek006000.h5`/`part06000.h5` + `jorek_namelist_spitest` 跑通
+  `jorek2_diagno_spi`。关键点：(a) 必须在同一 shell 里 `ulimit -s unlimited`
+  （放进子 shell 会失效 → 栈上 SIGSEGV）；(b) 需要 `mpirun -np 1`（沙箱内 MPI socket
+  被拒绝，已用沙箱外授权跑）；(c) `OMP_NUM_THREADS=1`。
+  产物核对：新 `abl_history.dat`（6000 行 × 46 列）与 H5 的
+  `xtime_spi_ablation_rate/_ablation` **逐点 1.0000 吻合**（总量 5.412150e27 vs
+  5.412151e27）；`fragments_position.dat` 与 `spi_*_arr` 在输出精度内一致
+  （R/Z/phi 差 ≤5e-4 来自 `f12.3` 格式，radius 差 ≤3e-9，species 精确）；
+  `sum(spi_abl_arr)`=4.2926e24 == 新 `abl_history` 第 6000 步的总速率 ✓。
+  ⇒ run 目录里那份坏掉的 `abl_history.dat` 可以按此配方重新生成。
+  已知缺失：`/home/ac_desktop/adas/adas_data/ccd96_ne.dat`（电荷交换数据，仅警告）；
+  `wall.txt` 缺失（程序自动回退到主输入）。
+  注意：`jorek2_diagno_spi` **不产出 projections**（源码里没有投影调用），
+  投影的受控对照需要模拟驱动程序 `marker_spi_source`（本机现有
+  `marker_spi_source_ntor1_old`、`XL50-U/…/marker_spi_source_600_ntor1`）。
+
+## 2026-09-29 (nonlocal ablation branch rebuilt offline and validated)
+
+Phase-1.5 item 2: make the JOREK nonlocal ablation branch computable from the
+saved data instead of waiting for a JOREK-side export.
+
+术语（沿用 `report/spi-analytic-baseline.md` 顶部的定义）：**帧** = 同一编号的
+`jorek*.h5` + `part*.h5` + `projections*.h5`（一次输出时刻的完整数据）；**表** =
+`nonlocal_array.dat` 的内容（1000 行 `psi_n, <T_e>, <n_e>`，只给非局域烧蚀分支用）；
+**shard（碎片）** = `jorek*.h5` 里 `spi_*_arr` 的每条碎片记录。指标：中位比 =
+`median(pred/rec)`（1.0 = 无偏）、log-corr = `ln` 空间的相关系数、within-2x =
+`pred/rec ∈ [0.5,2]` 的占比、总烧蚀率比 = `Σpred/Σrec`。
+
+Finding that forced the design:
+
+- `nonlocal_array.dat` is **not** a per-frame table: it is rewritten on every
+  `int3d_new` call (`nl_avg_Te(1) == 0` is reset each step, the logfile shows
+  one write per step), so only the last snapshot survives, and it belongs to a
+  different time than the saved frames (applying it to late frames overshoots
+  the recorded ablation by 60-150x on some runs, and falls below the local
+  value on others).
+- `contain_node` is **all zeros** in these HDF5 files; the element connectivity
+  is in `vertex` (4 x n_elements, 1-based).  The earlier reconstruction attempt
+  used `contain_node`, got zero volume weights and therefore NaN surfaces.
+
+Implementation:
+
+- `src/physics/spi_model.py`: `NonlocalAblationTable` (frozen-table reader,
+  JOREK's `minloc` + "step toward the axis" lookup, JOREK's unit conversions)
+  and a `nonlocal_table`/`psi_shard`/`psi_axis`/`psi_bnd` option on
+  `advance_shards_analytic` that applies `max(local, nonlocal)` inside the LCFS.
+- `src/data/nonlocal_table.py`: rebuilds the table from one frame exactly as
+  `diagnostics/mod_integrals3D.f90` does (`n_e = rho + (m_i/m_imp * Z_imp - 1)
+  rho_imp`, `Z_imp` from `projections*.h5` via `Z_imp/N_imp`, 40 psi surfaces,
+  `<T_e> = sum(n_e T_e dV)/sum(n_e dV)`, `<n_e> = sum(n_e dV)/sum(dV)`,
+  linear interpolation onto the 1000-point grid).
+- `tests/check_nonlocal_ablation.py`: compares local-only vs local+nonlocal
+  against the recorded `spi_abl_arr` (`--table frame|file`); the superseded
+  `tests/check_nonlocal_reconstruction.py` is deleted.
+
+官方后处理路线（`util/auto_spi_diagnostics.sh`）核对结果：`jorek2_diagno_spi` 会把
+restart 里的 `xtime_spi_ablation*` 逐时间步 dump 成 `abl_history.dat`（每步、按注入
+位置的注入率与累计原子数，外加 4 个总量列），并用 `convert2diagno_spi.py` 逐帧导出
+碎片轨迹 CSV；这些是**聚合的、逐时间步**的量，不含逐 shard 烧蚀率、也不含非局域表，
+所以本次逐帧重建仍然必要，但 `abl_history.dat` 可作为下一步的高频聚合校核。
+**但是**：这两个 run 目录里现存的 `abl_history.dat` 是坏数据（只有 t=0.02 一行非零，
+其余全 0），不能直接用；真正的逐时间步烧蚀历史在每个 `jorek*.h5` 里以
+`xtime_spi_ablation`（累计原子数）与 `xtime_spi_ablation_rate`（atom/s，形状
+`(index_now, 1)`）保存，`RunFrameStore` 已经在读它们。要重做该诊断必须在**最后一个
+有效 restart** 上跑 `jorek2_diagno_spi`。
+- Tests: `tests/test_nonlocal_table.py` (weights, surface averages, grid
+  interpolation, synthetic frame end-to-end) plus three new cases in
+  `tests/test_spi_model.py` (SI conversion, lookup tie-break, `max` wiring).
+
+Validation (8 post-injection frames per run, `--table frame`, `k=4`): the
+nonlocal branch raises 61-72% of shards and moves every run to median ratio
+1.00-1.09, log-correlation 0.982-0.997, 85-96% of shards within 2x, and total
+ablated-atom rate within ~5% (local-only: median 0.60-0.93, 57-83% within 2x,
+sum ratio 0.54-0.68).  Full table in `report/spi-analytic-baseline.md`.
+
+Integration and re-measurement:
+
+- `RunFrameStore` now stores per-frame `psi_axis`/`psi_bnd` and lazily rebuilds
+  and caches the nonlocal table (`store.nonlocal_table(position)`); the frame
+  cache was rebuilt accordingly.  `HybridFragmentDynamics.forward` accepts
+  `nonlocal_tables` + `psi_axis`/`psi_bnd` and applies `max(local, nonlocal)`;
+  `tests/train_fragment_dynamics.py` and `tests/eval_phase2_metrics.py` pass
+  them by default with a `--local-only` escape hatch.
+- Held-out `scan_1d22_ang15_5_massloss_neon_v400`, 5 x 300 pairs: the analytic
+  baseline moves from radius MAE 5.61e-7 / ablation median 0.533 / within-2x
+  52.0% / total-atom error -47% to **radius MAE 1.33e-7 / median 1.019 /
+  within-2x 90.7% / +2.0%**, and the median interval error from 39.5% to 4.0%
+  (`output/fragment_dynamics/v402`).
+- The learned correction now *degrades* those numbers (hybrid radius MAE
+  5.87e-7, ablation median 0.52, total-atom error -49%): the structural error it
+  was trained to absorb is gone, so the correction head needs re-tuning (or
+  retirement) before it is used again.  This is the Phase-2.3 gate to settle
+  next.
+
+Data-hygiene findings from the same pass (for the training set):
+
+- `scan_1d22_ang12_massloss_neon_v200` and `_v300` are **byte-identical**
+  (126/126 frames); `scan_1d21_ang12_massloss_neon_v200`/`_v300` share a
+  byte-identical 112-frame prefix.  Treating them as independent runs leaks
+  duplicates into LOO folds.
+- `scan_1d21_ang12_massloss_neon/jorek008700.h5` has `t_now = 19710.5` while
+  its neighbours are ~10600 (one frame outside the run's time order).
+
+Next: feed the rebuilt table into the fragment-dynamics/analytic path
+(psi at the shard, per-frame `psi_axis/bnd`, cached tables) and re-measure the
+Phase-2.3 gate with the faithful backbone.
+
+## 2026-09-29 (psi/Z_j mapping fixed and re-validated)
+
+Executed the P0 data-contract fix recorded in the two entries below.
+
+Code and tests:
+
+- `src/data/model502_schema.py`: `H5_VALUES_INDICES` changed from
+  `(2, 1, 0, 3, 4, 5, 6, 7, 8)` to the identity `(0..8)`; the comment now carries
+  the Fortran/export evidence.  Regression test:
+  `tests/test_model502_schema.py::test_h5_values_follow_the_fortran_model_order_without_permutation`.
+- Two stale expectations that pinned the swap were corrected
+  (`tests/test_parser_contract.py`, `tests/test_data_manifest.py`).
+  Full suite: **124 passed, 5 skipped**.
+
+psi semantics (source-checked):
+
+- H5 channel 0 is the **current total poloidal flux** (GS equilibrium + evolved
+  perturbation), not a perturbation and not a missing equilibrium.  For
+  `scan_1d21_ang12_massloss_neon/jorek009300.h5`: axis value 0.4379 vs
+  `psi_axis_t` = 0.4380, `psi_bnd_t` = 0.1122, 2195/4125 nodes have psi_n in
+  [0,1]; channel 2 is `Z_j` (range -11.7..0.05).
+- `get_psi_n(psi,Z)` is applied to exactly this `psi`, with
+  `ES%psi_axis/psi_bnd` recomputed every step by `bootstrap_find_minRad` from
+  `values(...,var_psi)` (`models/mod_bootstrap_functions.f90`).
+- `eqdsk` is only a **grid-construction** input: `grids/grid_inside_wall.f90` and
+  `grids/grid_utils/finish_grid.f90` use it to fill the new grid's initial psi and
+  the wall geometry.  Restart files carry both `values` and `psi_eq`, so neither
+  restart evolution nor offline psi_n reconstruction needs eqdsk.
+
+Artifacts rebuilt:
+
+- `.scratch/n/manifest.json`: 10 runs / 36 segments / 786 windows (the manifest
+  never consumed field channels, so these numbers are unchanged).
+- `.scratch/n/frames`: 10 runs, ~2 min.  Spot check: the cached `u` is
+  bit-identical to the raw H5 `values[0:9,0,0,:]` on the first and last frame.
+
+Validation:
+
+- `Delta* psi -> Z_j` (MLS operator from `src/physics/model502_full_loss.py`) on
+  recorded late frames of three runs: **corr 0.97-0.99, relative L2 0.14-0.21**
+  with the corrected mapping; the swapped reading gives corr ~0.0 and relative
+  L2 ~1e3-1e4.  `current_definition` relative residual on a real frame pair
+  (`scan_1d22_ang12`, dt=2.5): 0.067.
+- Phase 2.2 re-run with the corrected cache (`output/source_head/v401`, same LOO
+  held-out, 5x240): mean rel-L2 0.975 -> 0.684 (v400: 0.683); per-channel R2
+  0.211/0.155/0.659/0.707/0.601 (v400: 0.219/0.155/0.664/0.709/0.597).  The
+  Phase-2.2 conclusions are unchanged: the swap was not the cause of the
+  energy/radiation gap.
+- Phase 2.3 re-run (`output/fragment_dynamics/v401`, 5x300): aggregate
+  ablated-atom error -47% -> +6.8%, radius MAE 5.61e-7 -> 2.78e-7, death
+  agreement 0.9961 -> 0.9979, velocity MAE 0.025 -> 0.037; reproduces the
+  `v400_xtime` table.
+- `output/*/v400*` artifacts and the legacy `.scratch/model502-interp/frames`
+  cache were produced with the swapped mapping; they stay only as history and
+  must not be quoted.  `output/*/v401` supersede them.
+- Open item: the momentum sign note in `src/physics/model502_full_loss.py`
+  ("the stored psi/Z_j carry the opposite sign from the Fortran internals") was
+  derived on the swapped channels; it must be re-derived on the corrected data
+  before the physics-loss stage.  Flagged, not re-derived here.
+
+## 2026-09-29 (psi convention + nonlocal table resolved)
+
+Two findings that correct the previous entry:
+
+1. **The H5 psi IS the current field state (channel 0); the repo parser is
+   wrong.**  `models/model502/mod_model_settings.f90` defines
+   `var_psi=1, var_u=2, var_zj=3, var_w=4, var_rho=5, var_Ti=6, var_Vpar=7,
+   var_rhon=8, var_Te=9`, and `mod_export_restart.f90:492` copies
+   `node%values` directly (no reordering).  The H5 channel order is therefore
+   `[psi, Phi, Z_j, omega, rho, T_i, v_par, rho_imp, T_e]` (identity), while
+   `src/data/model502_schema.py` uses `H5_VALUES_INDICES=(2,1,0,3,4,5,6,7,8)`,
+   which **swaps psi and Z_j**.  Data corroborates: channel 0 max = 0.5032 ~
+   `psi_axis_t` = 0.5035 and 2673/4125 nodes have psi_n in [0,1]; channel 2 is
+   the large-range field (-15..0.7) that the parser was calling psi.
+2. **`nonlocal_array.dat` is a one-time frozen snapshot, not a per-frame
+   table.**  `int3d_new` is called only when `nl_avg_Te(1) == 0`
+   (`core/mod_jorek_timestepping.f90:414`), i.e. once at the start of the SPI
+   phase; the nonlocal ablation uses that frozen table for the whole run
+   (interpolated at the shard psi).  This is why the file looks "hotter" than
+   every saved frame and why the per-frame reconstruction attempt failed: the
+   target was the wrong quantity.
+
+Consequences:
+
+- P0b (per-frame nonlocal export) is **cancelled**.  The nonlocal branch is
+  computable offline: frozen table + recorded shard `spi_psi_arr`/radius/species
+  + the model-3 nonlocal formula, then `max(local, nonlocal)`.  No eqdsk and no
+  JOREK change are needed.  This likely closes the late-phase ablation gap
+  (local-only analysis underestimated by ~2x late).
+- The psi/Z_j swap is a **P0 data-contract bug**: it affects the parser output,
+  manifest statistics, the physics residuals (`Delta* psi -> Z_j`), the
+  elliptic surrogate (its psi/Z_j roles were exchanged) and per-field
+  diagnostics.  Fix the mapping to identity, rebuild the manifest/frame cache
+  and re-run the affected validations.
+
+## 2026-09-29 (nonlocal reconstruction attempt)
+
+Tried to reconstruct `nonlocal_array.dat` (the nonlocal-ablation surface
+averages) directly from the recorded fields, to decide whether P0b (JOREK-side
+export) is needed.
+
+- Verified the formulas: `ne = rho + alpha_e*rho_imp` with
+  `alpha_e = (m_i/m_imp)*Z_imp - 1` (marker mode: `Z_imp = projection Z_imp /
+  projection N_imp`), `p_e = ne*T_e`; 40 linearly spaced psi surfaces,
+  interpolated to a 1000-point psi grid (`mod_integrals3D.f90`).
+- Blocker: the stored psi in `jorek*.h5` is **not the total flux** used by
+  `get_psi_n`.  At frame 6500 the boundary nodes have psi ~ 0 while
+  `psi_bnd_t` = 0.113; the axis perturbation is ~0.035 while `psi_axis_t` =
+  0.504.  `psiRZ_eqdsk` exists (129x129 regular grid, psi range -0.73..1.78)
+  but uses a different normalization/offset, so mapping the equilibrium onto
+  the frame nodes is a nontrivial sub-task.
+- Consequence: self-reconstruction is not the cheap path.  P0b (per-frame
+  `nonlocal_array` export, a filename/index change in `mod_integrals3D.f90`)
+  is promoted to the recommended primary; self-reconstruction stays as a
+  fallback after the psi-convention mapping is solved.
+
+  **Retracted 2026-09-29 (see the newest entry).**  Those numbers were measured
+  on the swapped channels; with the identity mapping channel 0 is the total flux
+  and psi_n comes out directly.  P0b stays cancelled; the offline frozen-table
+  reconstruction is the path.
+- Side finding (data contract): the psi convention (perturbation vs total)
+  affects `Delta* psi -> Z_j`, the psi_n-based surface/boundary mapping and the
+  elliptic-surrogate input semantics; the analytic `Delta* psi` vs recorded
+  `Z_j` correlation is only 0.225 while the surrogate reaches 0.937, consistent
+  with a missing equilibrium component.  Recorded as roadmap Phase 1.5.6.
+  (Experiment script: `tests/check_nonlocal_reconstruction.py`.)
+
+## 2026-09-29 (later) — Phase 1.5 contract review: JOREK-side work list
+
+Re-checked the training-set namelists, `macroscopic_vars.dat`, `nonlocal_array.dat`
+and the JOREK sources to fix the Phase-1.5 contract and the JOREK-side change
+list.
+
+Findings:
+
+- `macroscopic_vars.dat` (written by `communication/live_data.f90`) is a
+  **per-timestep macroscopic history**, ~6546 blocks per run (times,
+  particlecontent, thermalenergy, heatingpower, particlesource, bnd_fluxes,
+  energy_conservation, ...).  It is run-specific and needs no JOREK change; it
+  gives a high-frequency history channel and budget validation.
+- `nonlocal_array.dat` already exists in every run (`mod_integrals3D.f90`
+  writes `psi_n`, surface-averaged `T_e`/`n_e`, 1000 points) but is a **single
+  snapshot** (overwritten on each call).  A per-frame export would be a small
+  filename change; alternatively the surface averages can be reconstructed
+  from the recorded fields and validated against this file first.
+- The namelist confirms `nout = 50`, `tstep_n` up to 5, `tstep_particles =
+  5e-9 s`, so one fluid step has up to ~408 particle substeps and one frame is
+  50 fluid steps.
+- Projections are written by the particle projection event
+  (`new_projection(..., to_h5=.true., basename='projections', index_h5=.true.)`
+  in `marker_spi_source.f90`); the exported value is the per-fluid-step
+  time-average.  The interval-averaged (or per-step) export is the P0a JOREK
+  change.
+- The `xtime_spi_ablation(_rate)` HDF5 export writes with `n_inj` dimensions
+  (`mod_export_restart.f90:851-858`), which is why the files are aggregate-only
+  `(n_steps, 1)`; a per-shard export changes those dims to `n_spi_tot`.
+
+Roadmap updates written into `new_version.md` Phase 1.5: Eulerian-moment
+reverse-assembly gate (machine precision), projection-window timebox with a
+trapezoidal fallback and recorded truncation error, the JOREK-side change list
+(P0a interval-averaged projections, P0b per-frame nonlocal tables, P1 per-shard
+ablation, P2 t_birth/RNG), the mandatory L3 implicit-vs-explicit-memory
+ablation, and the L4 hard physical clamping gate.
+
+## 2026-09-29 — Roadmap review against JOREK source and history
+
+Wrote `report/roadmap-review-2026-09-29.md`: systematic review of the current
+roadmap against the verified JOREK behaviour and the historical evidence
+(#0012/#0014/#0015/#0016).  Central finding: the current Phase-2.2 source head
+regressed against the historical split-head + history design (energy/radiation
+channels need history: #0016 reached R2 0.81-0.96, the current no-history head
+0.15-0.22).  Recommended a Phase-1.5 state/source contract, a baseline ladder
+for ADR-0014 and a do-not-repeat list.
+
+## 2026-09-29 — Marker→projection reconstruction: findings and the implicit-CfC question
+
+Investigated whether the five projection fields can be computed directly from
+the saved marker snapshots instead of learned.
+
+Experiments (all on `scan_1d22_ang15_5_massloss_neon_v400`, 76 aligned frames):
+
+1. Global marker charge moments vs projection totals (same / stagger /
+   trapezoid alignments): correlations ~0.05-0.18; marker moments grow
+   monotonically while the projection totals fluctuate and change sign.
+2. FEM reconstruction: ported the cubic 4x4 basis
+   (`elements/mod_basisfunctions.f90`) and the JOREK assembly
+   `v = HH(l,m)*size(l,m)*quantity/n_norm`, reconstructing N_imp/Z_imp/Z_eff
+   from `i_elm/st/weight/P_imp`. Still ~0.04-0.18 correlation.
+3. Timing check: part / jorek / projection timestamps agree to <1e-9
+   (`part time = jorek t_now * t_norm`).
+
+Why the snapshot reconstruction fails:
+
+- The projection values are **signed FEM basis coefficients**, not a summable
+  field.
+- `marker_spi_source.f90` / `mod_particle_loop.f90` accumulate the source over
+  `n_steps` particle substeps inside one fluid step: births during the interval,
+  charge-state evolution and transport all contribute; `part*.h5` is a single
+  snapshot.
+- The projection is the time-averaged source of the fluid step
+  (`rhs = feedback_rhs/(n_steps*timesteps)`); it is not a static function of the
+  frame snapshot.
+
+JOREK restart semantics (verified from source):
+
+- `part*.h5` / `part_restart.h5` store the full particle state (`P_imp`, `x`,
+  `v`, `weight`, `i_life`, `i_elm`, `st`); the process is Markovian in this
+  state (first-order charge-state ODE, instantaneous local rates, births from
+  the current shard ablation).
+- The field is static within one fluid step; `n_steps = fluid dt /
+  tstep_particles` with `tstep_particles = 5e-9 s`; `n_steps` ~ 1-326 for
+  `tstep` 0.02-2 JU; one output frame is 50 fluid steps.
+- The RNG state is not stored (statistical, not bitwise restart) and `t_birth`
+  is zero in the dumps.
+
+Efficiency:
+
+- One output interval costs ~`50 x N_alive x n_steps` particle-substeps:
+  ~1e7 (mid phase) to ~1.6e9 (late phase).  A vectorised NumPy replay is
+  feasible for one interval (seconds to minutes) but not for the full dataset
+  (days); full-scale compute needs a Fortran replay or JOREK-side per-substep
+  exports.
+
+Open architecture question (discussed, not decided): replace the explicit
+Phase-2.2/2.3 modules by an implicit multimodal encoder (graph field encoder +
+DeepSets fragment encoder + cross-attention fusion), a CfC latent evolution,
+and physics-constrained decoders (`S_pred = S_NGS * exp(M)`), with
+quench-weighted temporal sampling.  Evaluation recorded in the conversation:
+keep the native-mesh graph encoder (no CNN/FNO), carry the particle/charge
+state explicitly (shards alone are not sufficient), accumulate the source
+inside the CfC trajectory (S is an interval average), and keep the learned part
+to the transport/nonlocal closure for cross-device transfer.
+
+## 2026-09-27 — Phase 2.3 ablation-integral supervision (`xtime` series)
+
+Data finding: the exported `xtime_spi_ablation` / `xtime_spi_ablation_rate`
+datasets are `(n_steps, 1)` and hold the **sum over all shards** (verified: the
+last rate entry equals `sum(spi_abl_arr)` at the same frame).  Per-shard,
+per-internal-step ablation is not exported; per-shard values exist only once per
+saved frame.  A per-shard per-step export remains a JOREK-side follow-up.
+
+Added `src/data/ablation_series.py` (+ tests) and extended `RunFrameStore` with
+the per-frame cumulative total and total rate.  The dynamics trainer now also
+supervises the ablated atoms integrated over each frame interval:
+`sum_s(abl_pred * dt_seconds)` vs `cumulative(t_{k+1}) - cumulative(t_k)`, in
+log space.
+
+Held-out `v400` (4 epochs x 300 pairs, lr 1e-4, bounded corrections):
+
+| metric | analytic-only | hybrid |
+|---|---:|---:|
+| aggregate ablated-atom relative error | -46.95% | **+6.83%** |
+| median interval relative error | 39.5% | **21.8%** |
+| radius MAE [m] | 5.61e-7 | **2.78e-7** |
+| ablation median ratio | 0.533 | **1.074** |
+| ablation within 2x | 0.520 | **0.682** (epoch 1) |
+| death-status agreement | 0.9961 | **0.9979** |
+| velocity increment R2 (`dVel_R`) | 0.946 | 0.622 |
+
+Position is ~unchanged; the velocity increments are still hurt by the
+acceleration correction.  Reading: the integral supervision cuts the aggregate
+ablated-atom error from -47% to +7% and halves the per-interval error while
+keeping the radius/death gains; the remaining weak axes are the per-shard
+ablation variance (log-corr unchanged at 0.89) and the velocity increments.
+Next: freeze the acceleration correction, add regime conditioning, and request
+the per-shard per-step ablation export from JOREK.
+
+Artifacts: `output/fragment_dynamics/v400_xtime/checkpoint.pt`, `metrics.json`.
+
+## 2026-09-27 — Phase 2.3 first gate measurement (hybrid fragment dynamics)
+
+Added `src/models/fragment_dynamics.py` (analytic backbone + bounded learned
+corrections: multiplicative ablation in log space and an additive acceleration
+term, both zero-initialised) and `tests/train_fragment_dynamics.py`.
+
+Setup: held-out `scan_1d22_ang15_5_massloss_neon_v400`; 1537 training pairs
+(9 runs, consecutive post-`t_ns` frames); 4 epochs x 300 pairs; Adam lr 1e-4,
+weight decay 1e-4, grad clip 1.0; correction bounds: ablation x/÷2
+(log ±0.7), acceleration ±100 m/s^2.  Frame-granularity position update uses
+the trapezoidal form `x + v·dt + 0.5·a·dt^2`.
+
+Held-out metrics (lower is better):
+
+| metric | analytic-only | hybrid |
+|---|---:|---:|
+| position MAE (R, Z, phi) [m, m, rad] | 1.351e-5 / 3.55e-7 / 3.39e-5 | 1.364e-5 / 3.64e-7 / 3.39e-5 |
+| velocity MAE (R, Z, R x Z) [m/s] | 0.0251 / 0.0 / 4.74e-4 | 0.0368 / 7.2e-4 / 1.21e-3 |
+| radius MAE [m] | 5.61e-7 | **2.78e-7** |
+| death-status agreement | 0.9961 | **0.9979** |
+| ablation median ratio | 0.533 | **1.074** |
+| ablation log-corr | 0.891 | 0.891 |
+| ablation within 2x | 0.520 | **0.646** |
+
+Absolute-value R2 for the shard quantities is ~1.0 for both variants because the
+cross-shard spread dominates; the informative metric is the increment R2:
+`dR` 0.9999 -> 0.9999, `dZ` 1.0000 -> 1.0000, `dphi` 0.9628 -> 0.9628,
+`dVel_R` 0.9462 -> 0.6218, `dVel_RxZ` 0.9521 -> 0.6974, log-ablation R2
+-1.96 -> -1.93.  The learned acceleration correction hurts the velocity
+increments, which is why the next iteration should freeze it.
+
+Reading: the gate is **partially met** — radius, ablation ratio/within-2x and
+death timing clearly improve, position is ~unchanged (slightly worse) and
+velocity degrades.  The first unbounded run diverged (loss 1e9 -> NaN) and the
+correction overfitted the training runs' ablation bias sign; bounding the
+corrections fixed both.  Next iteration: freeze the acceleration correction
+(learn the ablation correction only), add a separate position-integration
+correction, and anchor the ablation correction with `xtime_spi_ablation_rate`.
+
+Artifacts: `output/fragment_dynamics/v400/checkpoint.pt`, `metrics.json`.
+
+## 2026-09-27 — Phase 2.2 first gate measurement (source head)
+
+Added `tests/train_source_head.py`: trains the fragment-to-projection head
+(`src/models/source_head.py`) on 9 runs and evaluates the held-out LOO run,
+comparing the calibrated analytic baseline with the hybrid (baseline + learned
+correction) per projection channel.
+
+Setup: held-out `scan_1d22_ang15_5_massloss_neon_v400`; 1577 training frames
+with shards + source; 5 epochs x 240 frames; Adam lr 1e-3; grad clip 1.0;
+frame cache `.scratch/model502-interp/frames`.
+
+Calibrated deposit -> projection channel scales (least squares on training
+frames): `[7.669e-27, 1.446e-26, 4.969e-21, 5.694e-22, 6.753e-23]`.
+
+Held-out per-channel relative L2 (lower is better):
+
+| channel | analytic baseline | hybrid (epoch 5) |
+|---|---:|---:|
+| dE_ion | 0.811 | 0.875 |
+| rad_sink | 0.933 | 0.906 |
+| Z_eff | 1.068 | 0.541 |
+| Z_imp | 1.046 | 0.501 |
+| N_imp | 1.019 | 0.590 |
+| mean | 0.975 | 0.683 |
+
+Per-channel R2 on the same held-out run (`tests/eval_phase2_metrics.py`):
+
+| channel | analytic baseline R2 | hybrid R2 |
+|---|---:|---:|
+| dE_ion | 0.329 | 0.219 |
+| rad_sink | 0.104 | 0.155 |
+| Z_eff | -0.307 | 0.664 |
+| Z_imp | -0.270 | 0.709 |
+| N_imp | -0.200 | 0.597 |
+
+Ablation-rate comparison on the held-out run (analytic vs recorded
+`spi_abl_arr`, 56,654 shard-frames): median ratio 0.553, log-corr 0.903,
+within-2x 55.0%.  Early frames reach log-corr ~0.99 (see
+`report/spi-analytic-baseline.md`); the late-phase deficit is the nonlocal
+ablation branch whose tables are not exported.
+
+Reading: the mean gate improves (0.975 -> 0.683) and three of five channels
+beat the baseline after only ~1200 sampled frames; `dE_ion` regressed and
+`rad_sink` is flat, so the per-channel gate is **not yet fully met**.  The next
+iteration should (a) train longer / over the full corpus, (b) give the small
+channels their own output scaling or loss weights, and (c) consider a per-shard
+ablation correction supervised by `xtime_spi_ablation_rate`.
+
+Artifacts: `output/source_head/v400/checkpoint.pt`, `metrics.json`.
+
+## 2026-09-27 — Phase 2 first increment (analytic backbone + source head)
+
+- `src/physics/spi_model.py`: differentiable JOREK SPI backbone — density /
+  temperature unit conversions, ablation model 3 (Parks/NGS neon branch,
+  `use_marker` convention, optional magnetic reduction), rocket-effect model 6
+  (PELOTON JET), spherical radius erosion, analytic step.  Nonlocal ablation is
+  explicitly out of scope (tables not exported).
+- `src/models/field_sampling.py`: inverse-distance k-NN sampling and
+  deposition.
+- `src/models/fragment_encoder.py`: masked DeepSets encoder for variable-size
+  shard sets.
+- `src/models/source_head.py`: analytic deposit baseline with a calibrated
+  per-channel scale and a zero-initialised learned correction (five projection
+  channels), batched deposition.
+- Evidence: `report/spi-analytic-baseline.md` (model 3 vs recorded ablation on
+  `v400`: log-corr 0.989/0.994/0.882 at frame positions 5/20/40; median ratio
+  1.47/1.28/0.49; within-2x 91%/93%/43%).
+- Tests: `tests/test_spi_model.py`, `tests/test_field_sampling.py`,
+  `tests/test_source_head.py` (13 tests).
+
+## 2026-09-27 — Phase 1 complete (window corpus + dataset)
+
+- `src/data/window_manifest.py` implements ADR-0012: segments cut at `t_ns`,
+  material coefficient changes, frame-numbering gaps and fragment birth;
+  windows are 30 burn-in frames + `horizon` supervised intervals; blocked inner
+  split (purge hard, one-span embargo when a run has >= 3 blocks); 10 LOO folds.
+- Built the real manifest with `tests/build_interp_manifest.py`
+  (`.scratch/model502-interp/manifest.json`): 10 runs, 36 segments, 786
+  windows; inner split train 329 / val 160 / dropped 297 (dropped windows
+  remain usable in the LOO folds).
+- `src/data/fragment_state.py`: shard-level `p(t)` (16 fields + alive mask +
+  `plasmoid_in_domain`) and stride-sampled marker summaries.
+- `src/data/interp_dataset.py`: `RunFrameStore` (all frames of a run, optional
+  disk cache), `InterpolationWindowDataset` (inner/fold/run filters, train-only
+  normalisation, `loss_mask` for burn-in), `collate_windows` (shard padding,
+  shared-mesh check), `compute_transform_stats`.
+- Real smoke on `scan_1d21_ang12_massloss_neon`: window `u (32, 4125, 9)`,
+  `condition (32, 44)`, `source (32, 4125, 5)`, alive shards 173 -> 36,
+  topology 4125 nodes / 32186 edges; cache 33.7 MB for 132 frames.
+- Tests: `tests/test_fragment_state.py`, `tests/test_window_manifest.py`,
+  `tests/test_interp_dataset.py` plus the synthetic fixture module.
+
+## 2026-09-24 — Repo cleanup and route rewrite
+
+- Deleted all nine-field training outputs (`output/model502_baseline/**`, 124
+  files / 33 MB) and archived the retired nine-field training workflow and its
+  records to `/tmp/repo_cleanup_20260924/` (not durable).  Removed the
+  `/tmp/ehl2_cache` frame cache.
+- Rewrote `README.md`, `CONTEXT.md` and `new_version.md` for the
+  interpolation-centred route; added ADR-0010 (physics loss only at
+  interpolated times) and ADR-0011 (fragment/source coupling architecture);
+  archived ADR-0008/0009.
+- Verified the data contract: all 10 2D runs are SPI runs (`using_spi=.t.`,
+  `spi_abl_model=3`, `spi_rkt_model=6`, `t_ns=8380`); shard state exists for
+  `t >= t_ns`; corrected the earlier "3 SPI runs" reading.
+- Verified rocket-effect model 6 in the JOREK working tree (PELOTON JET
+  scaling) and recorded `spi_rkt_H_m_mod=1.0` default.
+
+## Current state
+
+- Tests: 123 passed, 5 skipped (2 legacy segmented-sampler tests skip because
+  the retired `/tmp/ehl2_cache` is gone).
+- Next: finish the Phase-2.2 gate (longer training / per-channel handling);
+  refine Phase 2.3 (freeze the acceleration correction, add a
+  position-integration correction, anchor ablation with the per-timestep
+  series); then Phase 3 (CfC random two-substep data-only trainer).
+- Git: no commits made; everything is in the working tree.

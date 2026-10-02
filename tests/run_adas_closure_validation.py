@@ -89,7 +89,7 @@ def main():
         "cost_ratio_vs_model_step": float(cost_vs_model),
         "units_note": "temperature axis calibrated in log10(eV); dE_ion left external",
     }
-    output = Path("output/model502_baseline/adas_closure/report.json")
+    output = Path("output/validation/adas_closure/report.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True))
     print(json.dumps(report, indent=2, sort_keys=True))
