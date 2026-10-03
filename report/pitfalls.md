@@ -1306,3 +1306,19 @@
       ⇒ 选优窗口子集的构成直接决定 checkpoint 落在哪；把 61 维 condition
       （含 run 标识类通道）和全部 916 窗一起喂进去时，必须给选优协议配
       held-out 全窗或至少覆盖 dt 桶的分层验证集，不能只看前 12 窗。
+
+63. **61 维 condition 全集是 OOD 泛化的捷径：同 manifest/预算 A/B 确认（2026-10-03）**
+    - 设计：唯一变量 `--input-condition`；同 manifest_h5（916 训练窗）、同预算
+      （1000 epoch × 30 步）、同 seed、同 v400 全 61 窗评测。
+    - 结果（mean R² / relL2 / closer）：
+      cond_best **0.9681 / 0.1248 / 0.5721**，cond_final 0.9321 / 0.1892 / 0.6329；
+      nocond_best **0.9744 / 0.0983 / 0.4177**，nocond_final 0.9744 / 0.0983 / 0.4374；
+      旧 `step_s1` 参考 0.9778 / 0.0933 / 0.4453。
+    - 分 dt 桶 `derr/|u|`：dt<3 窗 3.118→0.539、3–15 0.133→0.121、
+      15–60 0.089→0.052、≥60 0.252→0.177；condition-on 的误差集中在 v400 注入后
+      早期斜坡（前 15 窗，`rho_imp`/`Phi`/`omega` 近零时相对误差爆炸）。
+    - 判读：**不是"condition 本身"有害，而是当前 61 维向量把物理场景量
+      （弹丸质量/速度/角度、n_spi）与 run 指纹类量（eta、输运系数、central_density 等）
+      混在一起，OOD 场景下后者是不可迁移的捷径。** 要 condition 就必须做通道分组
+      消融（先只保留物理场景子集）；61 维全集不得再作为默认基线。
+    - 细节与图：`report/ab-condition-2026-10-03.md`、`.scratch/n/fig/allwin_condition_ab*.{png,md}`。

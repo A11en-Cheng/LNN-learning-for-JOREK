@@ -162,8 +162,13 @@ lr 3e-3 (cosine → 3e-4)   batch 32 × 30 步/epoch   1000 epoch
 **数据协议（2026-10-03 起）**：单一训练 = **7 个纯 2D run 的全部窗口**训练
 （`--train-inner all`，含 inner split 标为 val/dropped 的窗口）+
 **留出 run（v400）的全部窗口**验证（`--val-source held-out`，供 `--save-best`）。
-零维参数（61 维）通过 `--input-condition` 在每个窗口接入（取传播区间起始帧，
-用训练 run 统计量标准化）。开训前硬门槛：manifest 的
+零维参数通过 `--input-condition` 在每个窗口接入（取传播区间起始帧，用训练 run
+统计量标准化）。**但 2026-10-03 的唯一变量 A/B 证明：当前 61 维全集显著损害 OOD
+泛化**（同 manifest/预算下 R² 0.9681→0.9744、relL2 0.1248→0.0983、closer
+0.5721→0.4177；dt<3 桶 3.12→0.54），原因是向量混入了 run 指纹类通道（输运系数、
+central_density 等）。因此**目前的可信基线是不接该 condition 向量**；要用 condition
+必须先做通道分组（物理场景子集 vs 数值/输运子集）A/B，详见
+`report/ab-condition-2026-10-03.md`、pitfalls #63。开训前硬门槛：manifest 的
 `summary.n_nonmonotonic_windows == 0`（每个窗口逐帧 `t_now` 严格递增，见
 pitfalls #60/#61）。8 折 LOO 暂缓，后续作为泛化评估再启用。
 
@@ -181,7 +186,7 @@ pitfalls #60/#61）。8 折 LOO 暂缓，后续作为泛化评估再启用。
 | E0 | 复现当前基线 | 现有 manifest + 基线配方 | 与 `ltc_roll_h1_1000` 指标一致 |
 | E1 | 8 折 LOO（暂缓） | 现有 manifest 的 8 个 fold | 逐 run 指标分布；2026-10-03 用户决定先做单一全窗口训练 |
 | E2 | 多 seed | E0 ± seed | 噪声带登记 |
-| E3 | 参数通道接入（已并入基线） | `--input-condition`（+61 维） | R²/`derr|u|` 是否改善 |
+| E3 | 参数通道分组（全集已证有害） | 61 维全集 vs 物理场景子集 vs 无 condition，同 manifest/预算 | 物理子集应 ≥ 无 condition，且显著优于全集（2026-10-03 A/B 已完成第一刀） |
 | E4 | shard→投影 head | Phase 2 结构 | 相对 L2 优于解析-only、预算闭合 |
 | E5 | 去教师源单步 | 教师源 vs 自生成源 A/B | 劣化 < 30% |
 | E6 | 闭环 rollout | 课程 1→2→3 | H1 不发散、指标可接受 |

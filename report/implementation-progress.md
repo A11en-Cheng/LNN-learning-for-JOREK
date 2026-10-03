@@ -4,6 +4,48 @@ Append-only log of the interpolation-centred Model 502 route.  Newest entries
 first.  Design decisions live in `docs/adr/`; evidence records live beside this
 file; artifacts are referenced by path (they are not committed).
 
+## 2026-10-03 (condition on/off A/B 收口：61 维全集是 OOD 捷径；诊断工具修复)
+
+**用户决定**：可以认为 condition 是上一轮变差的原因，但 condition 训练本身是必须的；
+先做唯一变量 A/B（1），之后本阶段实验收口。
+
+**A/B 设计**：同 manifest_h5（7 run 全部 **916** 训练窗）、v400 全部 **61** 窗评测、
+同预算（1000 epoch × 30 步，batch 32，cosine 3e-3→3e-4）、同 seed；唯一差别
+`--input-condition`（61 维全集）on/off。
+
+**结果（mean R² / relL2 / closer，v400 全 61 窗）**：
+
+| run | R² | relL2 | closer |
+|---|---:|---:|---:|
+| cond_best（ep34） | 0.9681 | 0.1248 | 0.5721 |
+| cond_final（ep1000） | 0.9321 | 0.1892 | 0.6329 |
+| **nocond_best（ep437）** | **0.9744** | **0.0983** | **0.4177** |
+| nocond_final（ep1000） | 0.9744 | 0.0983 | 0.4374 |
+| old step_s1 final（参考） | 0.9778 | 0.0933 | 0.4453 |
+
+分 dt 桶 `derr/|u|`（cond→nocond）：dt<3 3.118→0.539、3–15 0.133→0.121、
+15–60 0.089→0.052、≥60 0.252→0.177。condition-on 的伤害集中在 v400 注入后早期斜坡
+（前 15 窗，`rho_imp`/`Phi`/`omega` 近零）；condition-off 已基本追平旧基线，
+且 final 不再出现 condition-on 的后期退化（Z_j 0.899、omega 0.699）。
+
+**结论**：当前 61 维向量混合了物理场景量与 run 指纹类量（输运系数、central_density 等），
+OOD 场景下提供捷径；不是"condition 本身"的问题。下一步若要用 condition，先做通道分组
+（物理场景子集 vs 数值/输运子集）A/B，全集不再作为默认。详见
+`report/ab-condition-2026-10-03.md`、pitfalls #63。
+
+**工具修复（本轮顺带）**：
+1. `tests/plot_metrics_vs_dt.py`、`tests/plot_field_slices.py` 原来硬编码
+   `inner="val"` 且不传 condition ⇒ 对 manifest_h5 只画 13/61 窗、对 condition
+   checkpoint 直接跑错；现支持 `--inner {val,train,all}`（`all` 映射为 `None`）
+   和 condition 前向。
+2. `tests/make_diagnostics.sh` 支持 `MANIFEST/INNER/MAXW/DEVICE` 覆盖。
+3. 新增 `tests/plot_condition_ab.py`：读多个 eval JSON 出逐场 R²/relL2 + 分 dt 桶
+   derr 的对照图与 Markdown 表。
+
+**产物**：`output/cfc_interp/allwin_{cond,nocond}_h1_1000/`，
+`.scratch/n/fig/allwin_condition_ab*.{png,md}`、`allwin_ab_curves.png`、
+`allwin_{cond,nocond}_{curves,metrics_vs_dt,slices_w0,slices_w30}.*`。
+
 ## 2026-10-03 (训练协议改为单一全窗口训练 + 零维参数逐窗接入 + 时间倒退 NaN 事故)
 
 **用户决定（本条的出发点）**：不做 8 折 LOO；只跑**一个**训练——

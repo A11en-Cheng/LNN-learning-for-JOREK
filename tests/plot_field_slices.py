@@ -49,6 +49,11 @@ def main() -> None:
     parser.add_argument("--held-out", default="scan_1d22_ang15_5_massloss_neon_v400")
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--window", type=int, default=0, help="dataset index in the val split")
+    parser.add_argument(
+        "--inner", choices=("val", "train", "all"), default="val",
+        help="which windows of the held-out run the index refers to; 'all' is "
+        "the correct choice for manifest_h5",
+    )
     parser.add_argument("--sub-steps", type=int, default=2)
     parser.add_argument("--burn-in-substeps", type=int, default=1)
     parser.add_argument("--alpha", type=float, default=0.5)
@@ -70,11 +75,14 @@ def main() -> None:
         for name in fold["train_runs"]
     }
     stats = compute_transform_stats(
-        stores, runs=fold["train_runs"], with_lap=bool(kwargs["input_deriv2"])
+        stores, runs=fold["train_runs"], with_lap=bool(kwargs["input_deriv2"]),
+        with_condition=bool(kwargs.get("input_condition", False)),
     )
     dataset = InterpolationWindowDataset(
-        manifest, manifest["data_root"], runs=[args.held_out], inner="val", stats=stats,
+        manifest, manifest["data_root"], runs=[args.held_out],
+        inner=None if args.inner == "all" else args.inner, stats=stats,
         cache_dir=args.cache_dir, with_shards=False, with_lap=bool(kwargs["input_deriv2"]),
+        with_condition=bool(kwargs.get("input_condition", False)),
     )
     model = CfCInterpolator(**kwargs)
     model.load_state_dict(payload["state_dict"])
@@ -88,6 +96,7 @@ def main() -> None:
     dt, source = batch["dt"][0], batch["source"][0]
     deriv = batch["u_deriv"][0] if kwargs["input_deriv"] else None
     lap = batch["u_lap"][0] if kwargs["input_deriv2"] else None
+    condition = batch["condition"][0] if kwargs.get("input_condition", False) else None
     burn_in = int((~batch["loss_mask"][0]).sum().item())
     target_index = burn_in + args.horizon
     with torch.no_grad():
@@ -98,6 +107,7 @@ def main() -> None:
                 None if deriv is None else deriv[k],
                 None if lap is None else lap[k],
                 sub_steps=args.burn_in_substeps,
+                condition=None if condition is None else condition[k],
             )
         if args.horizon_mode == "rollout":
             for step_index in range(burn_in, target_index):
@@ -108,6 +118,7 @@ def main() -> None:
                     dt[step_index], source[frame], None,
                     None if deriv is None else deriv[step_index],
                     None if lap is None else lap[step_index],
+                    condition=None if condition is None else condition[step_index],
                 )
                 prediction, hidden = out["prediction"], out["hidden"]
         else:
@@ -116,6 +127,7 @@ def main() -> None:
                 dt[burn_in:target_index].sum(), source[target_index], None,
                 None if deriv is None else deriv[burn_in],
                 None if lap is None else lap[burn_in],
+                condition=None if condition is None else condition[burn_in],
             )["prediction"]
     raw_pred = inverse_transform_state(
         destandardize(prediction, mean, std, name="prediction")

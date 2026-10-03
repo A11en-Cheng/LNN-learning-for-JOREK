@@ -58,6 +58,11 @@ def main() -> None:
     parser.add_argument("--burn-in-substeps", type=int, default=1)
     parser.add_argument("--alpha", type=float, default=0.5)
     parser.add_argument("--max-windows", type=int, default=45)
+    parser.add_argument(
+        "--inner", choices=("val", "train", "all"), default="val",
+        help="which windows of the held-out run to plot; 'all' is the correct "
+        "choice for manifest_h5 (the val split is only 13 of 61 windows)",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--out", default=".scratch/n/fig/metrics_vs_dt.png")
     parser.add_argument("--csv", default="")
@@ -74,11 +79,14 @@ def main() -> None:
         for name in fold["train_runs"]
     }
     stats = compute_transform_stats(
-        stores, runs=fold["train_runs"], with_lap=bool(kwargs["input_deriv2"])
+        stores, runs=fold["train_runs"], with_lap=bool(kwargs["input_deriv2"]),
+        with_condition=bool(kwargs.get("input_condition", False)),
     )
     dataset = InterpolationWindowDataset(
-        manifest, manifest["data_root"], runs=[args.held_out], inner="val", stats=stats,
+        manifest, manifest["data_root"], runs=[args.held_out],
+        inner=None if args.inner == "all" else args.inner, stats=stats,
         cache_dir=args.cache_dir, with_shards=False, with_lap=bool(kwargs["input_deriv2"]),
+        with_condition=bool(kwargs.get("input_condition", False)),
     )
     model = CfCInterpolator(**kwargs)
     model.load_state_dict(payload["state_dict"])
@@ -95,6 +103,9 @@ def main() -> None:
             dt, source = batch["dt"][0], batch["source"][0]
             deriv = batch["u_deriv"][0] if kwargs["input_deriv"] else None
             lap = batch["u_lap"][0] if kwargs["input_deriv2"] else None
+            condition = (
+                batch["condition"][0] if kwargs.get("input_condition", False) else None
+            )
             burn_in = int((~batch["loss_mask"][0]).sum().item())
             hidden = None
             for k in range(burn_in):
@@ -103,12 +114,14 @@ def main() -> None:
                     None if deriv is None else deriv[k],
                     None if lap is None else lap[k],
                     sub_steps=args.burn_in_substeps,
+                    condition=None if condition is None else condition[k],
                 )
             prediction = model.multi_substep(
                 u[burn_in], hidden, deterministic_fractions(args.sub_steps, args.alpha),
                 dt[burn_in], source[burn_in + 1], None,
                 None if deriv is None else deriv[burn_in],
                 None if lap is None else lap[burn_in],
+                condition=None if condition is None else condition[burn_in],
             )["prediction"]
             raw_pred = inverse_transform_state(
                 destandardize(prediction, mean, std, name="prediction")
