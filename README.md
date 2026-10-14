@@ -1,5 +1,14 @@
 # HyPhy-GLNN：JOREK Model 502 非均匀时间插值代理模型
 
+> **2026-10-11 进展与工作收束**：[项目总结](docs/project-summary-2026-10-11.md)区分了完整耦合成果、试跑训练、性能对照与未验收部分。当前保留含源路径，先建立独立纯流体候选 head，等待新数据核查；尚未开展纯流体训练，不宣称长期物理可靠或 C0 完成。
+
+> **2026-10-04 架构修订（现行）**：本项目现行路线以 [roadmap_v2.md](roadmap_v2.md) 与
+> [ADR-0018](docs/adr/0018-architecture-first-and-physics-structured-build.md) /
+> [ADR-0019](docs/adr/0019-recorded-output-timing-contract.md) 为准：完成新架构——
+> 自生成源 + stencil-conv 九场推进 + JOREK 错步闭环（推理路径不使用任何未来记录量）。
+> 下面的"非均匀时间插值 / Physics Loss / CfC"描述属 **v1 历史**，只作背景；
+> 文档隔离规则见 [docs/adr/README.md](docs/adr/README.md)。
+
 本项目用 CfC LNN 在 JOREK Model 502 二维数据上训练连续时间代理模型。目标不是"固定步长的下一帧回归"，
 而是：
 
@@ -51,8 +60,9 @@ Physics Loss 不用于有标签的数据点。把物理项当作记录帧一步�
 ## 文档
 
 - 术语：[CONTEXT.md](CONTEXT.md)
-- 路线图（单一来源）：[new_version.md](new_version.md)
+- 路线图（单一来源）：[roadmap_v2.md](roadmap_v2.md)（v1 记录见 [new_version.md](new_version.md)）
 - 报告索引：[report/README.md](report/README.md)
 - 物理约定：[src/physics/definitions.md](src/physics/definitions.md)
+- JOREK 归一化（代码核实）：[docs/jorek-normalization.md](docs/jorek-normalization.md)
 - 数据契约：[report/model502-schema-and-source-protocol.md](report/model502-schema-and-source-protocol.md)
 - 决策：[docs/adr/](docs/adr/)

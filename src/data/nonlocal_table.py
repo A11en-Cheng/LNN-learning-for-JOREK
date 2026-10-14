@@ -35,11 +35,17 @@ def node_volume_weights(vertex: np.ndarray, pos: np.ndarray) -> np.ndarray:
     weights = np.zeros(n_nodes, dtype=np.float64)
     elements = np.asarray(vertex, dtype=np.int64).T - 1  # [n_elements, 4], 1-based
     valid = ((elements >= 0).all(axis=1)) & ((elements < n_nodes).all(axis=1))
-    for element in elements[valid]:
-        xy = pos[element]
-        x, y = xy[:, 0], xy[:, 1]
-        area = 0.5 * abs(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1)))
-        weights[element] += 0.25 * area * float(np.mean(x))
+    if not valid.any():
+        return weights
+    # Vectorised shoelace area + centroid-R lumping (identical formula to the
+    # per-element loop; the loop version dominates the per-frame rebuild cost).
+    elements = elements[valid]
+    xy = pos[elements]  # [n_valid, 4, 2]
+    x, y = xy[:, :, 0], xy[:, :, 1]
+    x_next, y_next = np.roll(x, -1, axis=1), np.roll(y, -1, axis=1)
+    area = 0.5 * np.abs(np.sum(x * y_next - y * x_next, axis=1))
+    contribution = 0.25 * area * x.mean(axis=1)
+    np.add.at(weights, elements, contribution[:, None])
     return weights
 
 

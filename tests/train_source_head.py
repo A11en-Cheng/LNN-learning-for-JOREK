@@ -1,3 +1,6 @@
+# [v1 LEGACY — 2026-10-04] Trains the source head with same-index
+# (state, shard, projection) triples, which ADR-0019 shows is misaligned.
+# Rebuild the dataset pairing before any reuse.
 """Phase-2.2 trainer: fragment-to-projection source head (analytic + learned).
 
 Gate (ADR-0011 / roadmap Phase 2.2): on a held-out run, the hybrid head must

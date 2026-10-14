@@ -111,6 +111,12 @@
 ## 5. 归一化标准 (保留原定义)
 本节保留原有 JOREK 无量纲化内容，作为 SI 与代码变量的换算基准。
 
+> **2026-10-04 注意**：§5.1–5.3 是通用 JOREK R0/B0/vA 模板，**不适用于本仓库的
+> Model 502 EHL-2 路径**（该路径的 `B`/`psi` 直存 SI，时间单位是 `sqrt(mu0 rho0)`）。
+> 现行、逐条带 JOREK 源码行号的规范见
+> [docs/jorek-normalization.md](../../docs/jorek-normalization.md)；§5.4/§8 的数值
+> 若与该文件冲突，以该文件为准。
+
 ### 5.1 基础参考量 (Reference Quantities)
 所有物理量均基于以下三个基本参考量进行无量纲化：
 - 真空环向磁场 (`B0`)：磁轴处的环向磁场强度 [Tesla]
@@ -200,6 +206,9 @@
 历史 5 通道约定已退役。
 
 ## 8. Model 502 归一化（JOREK 源码依据，2026-09-07 核实）
+
+> **2026-10-04 更新**：本节为简要版；完整规范（含输运系数单位、显式稳定性判据、
+> 温度因子 2 的适用条件）见 [docs/jorek-normalization.md](../../docs/jorek-normalization.md)。
 
 以下关系取自 JOREK 源码 `models/mod_atomic_coeff_deuterium.f90:65-66` 与
 `communication/mod_export_restart.f90`，是 pipeline 内部单位换算的权威来源：

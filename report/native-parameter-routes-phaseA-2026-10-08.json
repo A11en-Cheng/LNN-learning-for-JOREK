@@ -1,0 +1,917 @@
+[
+  {
+    "name": "eta",
+    "group": "physical_coefficient",
+    "unit": "m^2 / JOREK time",
+    "value": 1.443e-10,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "magnetic_diffusion_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "visco",
+    "group": "physical_coefficient",
+    "unit": "m^2 / JOREK time",
+    "value": 0.0024,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "poloidal_viscosity_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "visco_par",
+    "group": "physical_coefficient",
+    "unit": "m^2 / JOREK time",
+    "value": 0.0005,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "parallel_viscosity_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "visco_par_par",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "parallel_viscosity_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "ZK_i_par",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 166660.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_parallel_heat_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_par",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 4103700.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_parallel_heat_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[1]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 5e-06,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[2]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[3]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.13,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[4]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.01,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[5]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.92,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_perp[6]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_radial_profile_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[1]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 2e-06,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[2]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[3]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.08,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[4]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.01,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[5]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.96,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_perp[6]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[1]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 2e-06,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[2]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[3]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.08,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[4]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.01,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[5]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.96,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_perp[6]",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_radial_heat_profile_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "time_evol_theta",
+    "group": "numeric_time",
+    "unit": "1",
+    "value": 1.0,
+    "provenance": {
+      "kind": "derived",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "time_contract_recompute_from_dt_pair",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "audit_only"
+  },
+  {
+    "name": "time_evol_zeta",
+    "group": "numeric_time",
+    "unit": "1",
+    "value": 0.5,
+    "provenance": {
+      "kind": "derived",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "time_contract_recompute_from_dt_pair",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "audit_only"
+  },
+  {
+    "name": "T_0",
+    "group": "scenario",
+    "unit": "JOREK energy",
+    "value": 1e-06,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "background_temperature_condition_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "Ti_0",
+    "group": "scenario",
+    "unit": "JOREK energy",
+    "value": 5e-07,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "ion_background_temperature_condition_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "Te_0",
+    "group": "scenario",
+    "unit": "JOREK energy",
+    "value": 5e-07,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "electron_background_temperature_condition_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "tstep",
+    "group": "numeric_time",
+    "unit": "JOREK time",
+    "value": 0.5,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "time_contract",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "audit_only"
+  },
+  {
+    "name": "t_now",
+    "group": "numeric_time",
+    "unit": "JOREK time",
+    "value": 8601.000000000284,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "time_contract",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "audit_only"
+  },
+  {
+    "name": "central_density",
+    "group": "physical_coefficient",
+    "unit": "10^20 m^-3",
+    "value": 0.8,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_normalization_context",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "central_mass",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 1.0,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "mass_normalization_context",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "F0",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": -3.308745132,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "magnetic_geometry_closure_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "R_domm",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": -10.0,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "geometry_context_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "sqrt_mu0_rho0",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 4.085775225951833e-07,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "unit_time_conversion_context",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "t_norm",
+    "group": "physical_coefficient",
+    "unit": "s / JOREK time",
+    "value": 4.085775225951833e-07,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "unit_time_conversion_context",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "n_spi",
+    "group": "scenario",
+    "unit": "1",
+    "value": 846.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "pellet_count_condition_encoder_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "pellet_density",
+    "group": "scenario",
+    "unit": "10^20 m^-3",
+    "value": 430000000.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "pellet_material_condition_encoder_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "gamma_i_stangeby",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 8.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_sheath_boundary_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "gamma_e_stangeby",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 8.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_sheath_boundary_coefficient_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "particlesource",
+    "group": "scenario",
+    "unit": null,
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "background_density_source_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ellip",
+    "group": "scenario",
+    "unit": null,
+    "value": 2.44,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "train_only_group_affine_pending",
+    "consumer": "equilibrium_shape_condition_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "bc_natural_open",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 1.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "open_boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "duplicate_legacy_entry"
+  },
+  {
+    "name": "ZK_par_max",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 10000.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "parallel_heat_cap_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZKpar_T_dependent",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 1.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "temperature_dependent_heat_closure_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "Ti_min_ZKpar",
+    "group": "physical_coefficient",
+    "unit": "JOREK energy",
+    "value": 0.0,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_heat_floor_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "Te_min_ZKpar",
+    "group": "physical_coefficient",
+    "unit": "JOREK energy",
+    "value": 0.0,
+    "provenance": {
+      "kind": "default",
+      "source": "legacy_JOREK_default_chain"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_heat_floor_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unconfirmed_default"
+  },
+  {
+    "name": "T_min",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.00032085,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "temperature_floor_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "T_min_neg",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.00032425,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "negative_temperature_branch_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "rho_min",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.001,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "density_floor_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "rho_min_neg",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.001,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "negative_density_branch_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_e_par_neg",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 150.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "electron_negative_heat_branch_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "ZK_i_par_neg",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 24.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "ion_negative_heat_branch_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_par",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.05,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "main_density_parallel_diffusion_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "D_par_imp",
+    "group": "physical_coefficient",
+    "unit": null,
+    "value": 0.05,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "impurity_density_parallel_diffusion_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "unresolved_unit"
+  },
+  {
+    "name": "freeboundary",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 0.0,
+    "provenance": {
+      "kind": "h5",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek004108.h5"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "resistive_wall",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 0.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "wall_boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "bc_natural_open",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 1.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "unavailable_until_confirmed",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "open_boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "duplicate_legacy_entry"
+  },
+  {
+    "name": "n_open",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 1.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "open_boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  },
+  {
+    "name": "n_limiter",
+    "group": "physical_coefficient",
+    "unit": "1",
+    "value": 64.0,
+    "provenance": {
+      "kind": "namelist",
+      "source": "/mnt/d/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400/jorek_namelist_spitest"
+    },
+    "available_at": "initialization",
+    "normalizer": "explicit_unit_conversion_pending",
+    "consumer": "limiter_boundary_configuration_pending",
+    "supported_range": "observed_only_no_extrapolation_claim",
+    "status": "declared"
+  }
+]

@@ -4,6 +4,719 @@ Append-only log of the interpolation-centred Model 502 route.  Newest entries
 first.  Design decisions live in `docs/adr/`; evidence records live beside this
 file; artifacts are referenced by path (they are not committed).
 
+## 2026-10-07（ADR-0020：marker 源契约 + 降阶 marker 链 + 登记 restart + 共享 S 接口；276 passed / 1 skipped）
+
+**任务**：按用户 A–G 指令把当前 docs/ADR/代码/报告对齐 roadmap_v2 的规划；
+`roadmap_v2.md` 本身按指令保持不改（勘误进入 ADR-0020 + conformance 报告）。
+不做闭环训练（Phase C 另派）、不做边界拓扑重写、不引入 GNN/FFT 谱分支、不删数据。
+
+**关键事实（本次复核）**：
+
+- **源对象（A）**：marker 模式（`use_marker=.t.`，生产 namelist 确认）下
+  `mod_elt_matrix.f90` 跳过解析电离/辐射（`:944,972,1179-1199`），直接从投影
+  aux 变量取五通道（`:989-1003`）并回代电阻率/输运（`:1079,1129`）、进 eq9 RHS
+  （`:1728`）；解析 `total_imp_source` 只给杂质密度源（`:1219,1542,1717`）。
+  ⇒ roadmap 的"projections 只是监督代理"被 ADR-0020 决定 1 覆盖。
+- **B1（B）**：解析 shard 沉积与记录投影对象差异（48–92% 质量落解析=0 节点、
+  强校放大 22×）⇒ B1 改为完整 marker 链（诞生→ADAS 电荷态→场向平流+扩散→
+  沉积+gather 平均），NN 只学有界残差；全粒子回放不可行（172 MB/帧、840 帧/run）。
+- **restart（C）**：v400 实测 9 个 `dt=0` 事件（injInner 6 个）；生成侧不重导，
+  登记事件允许存在（跳过跨界配对与滞后投影），未登记仍 fail-fast。
+- **契约细节（G）**：原生 interval 由 `t_now` 推导 + provenance；
+  `freeboundary` 是全局标志、`axis_node` 缺失；预算按 restart 分段。
+
+**交付**：
+
+- `docs/adr/0020-marker-source-contract.md`（新增，含 A–G 决定、roadmap 覆盖清单）；
+  `docs/adr/0019` 增 2026-10-07 登记 restart 补充；`docs/adr/README.md` 索引/规则更新。
+- `report/conformance-roadmap-v2-2026-10-07.md`（新增）：A–G 结论 + roadmap §0–§8
+  条目 ↔ 实现/证据/状态表 + 子阶段标签 B1.2/B2.1 + 硬问题协议（H1 全粒子回放不可行、
+  H2 inj_source 未导出）。
+- `src/models/source_contract.py`（新增）：共享五通道 S 接口（顺序/dof-0/单位/
+  gather-time 平均/marker run 真源声明）。
+- `src/models/source_module.py`：`MarkerChain`/`MarkerChainConfig`（确定性 golden-angle
+  诞生、ADAS SCD/ACD 电荷态、解析 ψ 梯度场向平流 + `-D⟂∇ln n_imp` 扩散、
+  FEM 沉积 + gather 平均）、`AugmentedState`/`advance_augmented_source`、
+  marker 云摘要特征接入 split heads、`use_marker_transport` 开关。
+- `src/models/field_propagator.py`：`source_proj` 改为 5 通道 + 共享接口校验。
+- `src/models/fem_sampling.py`：新增解析 `sample_gradient`（无额外 locate 调用）。
+- `data/restart_events.json`（新增）：v400（9 事件）/injInner（6 事件）登记表。
+- `src/data/native_run.py`：`zero_dt_policy="registered"` 默认、事件登记解析
+  （参数/sidecar/`<run>/restart_events.json`/仓库表）、跨界配对与滞后投影跳过并校验、
+  事件帧退化源窗口登记、shard 时间标注改为真实帧时间（`jorek{k}`=T_k）。
+- `src/data/step_dataset.py` / `tools/check_export_v3.py`：新报告字段、CLI
+  `--restart-events`、默认策略与摘要。
+- `src/data/budget.py`：`detect_restart_events`、`restart_segments`、
+  `segmented_total_atoms`、`native_step_budget.restart_segment_boundary`。
+- `tools/train_source_module_b1.py`：`--marker-chain`、`--zero-dt-policy`、
+  chunk 内跨 step 记忆串接、marker 特征/基准臂、修正后的 shard 配对断言。
+- 契约/报告：`report/data-contract-v3.md`（§1 双源对象、§4.3 登记 restart、§4.4
+  推导 interval/freeboundary/axis、§5 预算分段）、`report/data-export-spec-v3.md`
+  （source_object 词表、归一化规则）、B1 报告勘误、`CONTEXT.md`、
+  `report/model502-schema-and-source-protocol.md` §3/§3.1a。
+- 测试：`tests/test_step_dataset.py`（登记事件通过/未登记 fail/跨界与滞后跳过/
+  滞后偏移校验/真实 run registered）、`tests/test_check_export_v3.py`（四策略 CLI）、
+  `tests/test_budget.py`（restart 分段）、`tests/test_source_module.py`（marker 链、
+  共享接口、增广状态）、`tests/test_field_propagator.py`（5 通道源注入）。
+
+**验证**：`.torch-cuda-env/bin/python -m pytest -q` → **276 passed, 1 skipped**
+（基线 266 passed / 1 skipped，无回退）；B1 训练器 analytic/marker 两路径在真实
+窗口冒烟通过（`/tmp/b1-smoke*`）。
+
+## 2026-10-07 (Phase B1：自生成源模块 shard/p → S + 单步训练/验证 + 预算口径对账；266 passed)
+
+**任务**：实现 Phase B1 自生成源模块（ADR-0018 决定 1/3/8/11 + ADR-0019 配对）：
+`(u_{k-1}, u_k, p_{k-1}) → S_k`，确定性碎片演化 + FEM 形函数局域采样 + 解析骨干
+（NGS/Parks + 非局域 max）+ 有界学习修正（默认关闭）+ split heads + 确定性 FEM 组装；
+单步训练/验证与物理性验收；调查"烧蚀率口径 ≈20×"。不做闭环（Phase C）、不改场推进器/
+边界/legacy/roadmap/ADR。`gh` 缺失，未走 issue 流程。
+
+**关键事实**：
+
+- **数据门禁**：默认严格模式仍 fail-fast（6 个零步长帧 2704/5681/6441/7221/8611/9291，
+  受影响配对 2703/5680/6440/7220/8610/9290，exit 1）⇒ 去重 run 未生成，
+  本任务全部数字在 `--zero-dt-policy list`（**非最终数据**）上完成；list 复跑
+  `steps=8397 [2701..11103]`、`shards 846/846/846`、`boundary codes
+  [0,1,2,5,9,11,15,19,20,21]`、`condition 61 条`。
+- **"≈20×" 差异定位**：`xtime_spi_ablation` 在 code restart 归零（reset
+  `[5680,6440,7220,8610,9290]`），末值只覆盖最后一段；rate 积分 1.81172e21 atoms
+  = 逐段正增量之和 1.81122e21（比 1.00028），末值比 **14.79**；逐 step 增量/rate·dt
+  中位 0.99948。⇒ **不是单位错误，是重启段计数口径**；
+  `abl_history.dat` 同样只到 index 9290。
+- **原生 loader shard 时间标注**：`Σ spi_abl(jorek{k})` 与 `xtime_spi_ablation_rate[k]`
+  比 0.996–0.999 ⇒ `jorek{k}` 的碎片数组是**窗口末端** T_k 状态；训练侧因此把
+  `p_{k-1}` 取为上一条记录的 `shard_start`（登记为 loader 语义差异，见报告 §8 #1）。
+- **解析骨干（含非局域 max）**：523 个验证窗口上逐 shard 烧蚀率比中位 **1.0021**
+  （P10 0.976 / P90 1.023）、半径相对误差中位 **3.8e-7**、原子预算比 **1.0002**；
+  分相位 fidelity probe：early/mid/late = 1.006/1.004/1.004（同帧）与
+  1.005/1.000/1.002（模块演化）；**局域-only 会 late 掉到 0.355** ⇒ 非局域分支必需。
+- **proxy vs inj_source（登记）**：把解析组装与 `projections*.h5` 逐通道对比，
+  最小二乘标度差 11–5.5e5、中位积分比 179–2.1e6、空间相关 0.06–0.29、
+  48–92% 目标质量落在解析=0 节点上 ⇒ 投影只能作登记代理（标度校准到投影会把原子预算放大 22×）。
+- **有界修正（消融臂，3 seed）**：原子预算已无空间（0.0120→0.0124–0.0135），
+  辐射预算 0.764→**0.5485**；记忆 vs 无记忆在单步窗口无可测差异（登记为负结果；
+  历史证据是帧/事件级，判定场景为 Phase C）。
+
+**交付**：
+
+- `src/models/source_module.py`（新增）：`NeonTables`（ADAS scd/acd/plt/ion，缓存）、
+  逐 shard 日冕电价与辐射系数、确定性 4 子步碎片演化（JOREK update_spi 顺序）、
+  5 通道解析组装（形函数沉积 + 集总质量归一）、`n_norm`/`E_norm` 单位换算、
+  split heads（instant: Z_eff/Z_imp/N_imp；memory: dE_ion/rad_sink，GRUCell 潜状态）、
+  有界乘性修正（log 空间 clamp ±log2，零初始化=解析骨干）、预算输出、
+  `shard_layout ∈ {a_prime, fragment_state}` 显式布局（混用实测 1e27 烧蚀爆炸）。
+- `src/models/fem_sampling.py`（新增）：节点邻接+质心候选的元素定位、Newton 逆映射、
+  双线性形函数采样/沉积、集总节点测度（∫x m = Σq 精确守恒；真实网格 846 点全内点、22 ms）。
+- `tools/train_source_module_b1.py`（新增）：窗口缓存（1046 例）、blocked train/val、
+  代理标度校准、4 臂对照（analytic_raw / proxy_calibrated / correction_memory /
+  correction_nomemory）、预算监督（原子记录序列 + 辐射注册换算因子）、
+  离群截断 loss、shard 验收、真实帧单调性扰动、分相位 fidelity probe、`--probe-only`。
+- `src/data/budget.py`：`ablation_series_reconciliation()`（≈20× 对账，含 reset 检测与
+  rate/segment/last 三个比值）。
+- `src/data/nonlocal_table.py`：`node_volume_weights()` 向量化（43× 加速，差 ≤8e-14），
+  使按帧重建非局域表可行（18 ms/帧）。
+- `tests/test_source_module.py`（新增 20 例）：布局注册表、配对/时序、未来帧隔离
+  （两份 run 污染 jorek{k+1} 逐位一致）、FEM 线性复现/守恒、解析律对照 Parks、
+  非负有界、确定性与梯度、split head 通道隔离、clamp、记忆消融、单调响应、
+  预算对账、真实帧验收（skip-if-absent）。
+
+**测试**：`pytest tests/test_source_module.py -q` → 20 passed；
+`pytest -q` → **266 passed, 1 skipped**（基线 246/1，+20，无回退）。
+
+**产物**：`.scratch/phase-b1-source/{metrics.json, probe.json, gate/*.json, cache/}`。
+全流程 CPU，未使用 GPU（未提权）。
+
+**报告**：`report/phase-b1-source-module-2026-10-07.md`（模块结构、proxy 差异量化、
+预算/单调性证据、8 条开放问题）。未改 legacy/roadmap/ADR/场推进器/原生 loader。
+
+## 2026-10-07 (Phase A′ v2：原生逐步布局 loader + restart/零步长方案 1 + 原生预算；246 passed)
+
+**任务**：把 export_v3 loader/验收 CLI 扩展为支持原生逐步布局（`jorek*/projections*/part*`
+同目录），按方案 1 处理代码重启的零步长帧（生成侧去重，loader 负责验证/登记/失败提示），
+并补原生布局的预算与 condition 读取。不做训练/闭环/边界拓扑。`gh` 缺失，未走 issue 流程。
+
+**关键事实（run `phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner`，只读全量复核）**：
+`jorek{2701..11104}` 8404 帧、`projections{2700..11104}` 8405 帧、`part{2710..11100}`
+每 10 步 840 帧；零步长帧 **2704/5681/6441/7221/8611/9291**（受影响配对
+2703/5680/6440/7220/8610/9290）；`dt_step` 0.05–5.0（中位 0.5）；`part{n}.time/t_norm
+= T_{n-1}` 840/840；事件处 `projections{n-1}` 偏移 −dt_source（−5.0/−1.0/−0.2 等），
+`projections{n}` 对齐；**有效单步记录 8397**（8403−6）。
+
+**交付**：
+
+- `src/data/native_run.py`（新增）：原生布局 reader（`u_before=jorek{k}`、
+  `S_used=projections{k}`、`u_after=jorek{k+1}`、shard 双端 = jorek 的 `spi_*_arr`）；
+  区间由 `t_now` 推导并与 `macroscopic_vars.dat` 交叉校验（provenance 登记）；
+  静态 mesh sha256 缓存（首/末 + stride=128 抽验，本 run 66 次一致）；
+  `available_restart_files.txt`（715 checkpoint）解析 + 6 事件交叉登记与逐条检查；
+  `--zero-dt-policy {error,list}`（默认 error：精确索引 + "生成侧需在 restart 处去重"；
+  list 仅诊断，丢弃零长记录并登记）；生产 namelist condition（61 维、冻结分组、
+  `eta/visco/visco_par` H5↔namelist 交叉校验、ZK 温度依赖/上限登记）。
+- `src/data/step_dataset.py`：`detect_run_layout()` 自动检测 export_v3 / native，
+  `StepRunDataset` 分派（同一公开面）；报告新增 `layout_kind/single_step_method/
+  zero_dt/restart/interval_source/boundary_frames` 登记字段。
+- `src/data/budget.py`：`read_series_tail()`（只读 `dataset[-1]`，避免逐 step 读完整
+  O(N²) 历史）、`native_step_budget()`（逐 step 烧蚀/电子/电离/辐射差值 + abl_history 行）、
+  `summarize_budget()` native 登记段。
+- `tools/check_export_v3.py`：`--run-dir` 直接吃原生 run，新增
+  `--zero-dt-policy/--restart-file/--restart-indices/--gap-indices/--namelist/
+  --mesh-verify-stride`，输出 contract/alignment/restart/shards/boundary/condition/
+  files/linkage/budget 全段。
+- 测试：`tests/test_step_dataset.py`（+15 原生用例）、`tests/test_budget.py`（+4）、
+  `tests/test_check_export_v3.py`（+3）、`tests/conftest.py`（原生 run fixture）；
+  `tests/test_data_manifest.py` 的 v1 8-run 网格断言排除新出现的 `phaseA_dataset_*`
+  （它属于 A′ 数据契约，不属于 v1 corpus）。
+
+**真实 run 验收（默认 error 模式）**：exit 1，输出
+`6 zero-dt frame(s) ... Affected pairs (dt_step=0): [2703, 5680, 6440, 7220, 8610, 9290]
+... Generation-side fix (plan 1: dedup at every code restart) ...`
+（`.scratch/phaseA-prime-native/native_check_error.json`）。
+
+**真实 run 诊断（`--zero-dt-policy list`）**：exit 0，109 s；
+`steps=8397 [2701..11103] windows=8397`；`dt_step 0.05/0.5/5`；
+`restart registry=715 events=6 checked=444`；`shards 846/846/846`；
+`boundary codes [0,1,2,5,9,11,15,19,20,21]`；`condition n_entries=61`；
+`budget atoms=1.22461e20`、能量闭合末行残差 8.448e13（11105 行中 2 行非有限）。
+JSON：`.scratch/phaseA-prime-native/native_check_list.json`（+ `.txt` 摘要）。
+
+**去重形态演示（合成 fixture，plan-1 形状）**：删除重复帧 2704 + `--gap-indices 2704`
+→ 默认严格模式 exit 0（`steps=5`、`dt_step 0.5`、`zero_dt.indices=[]`、`gaps=[2704]`）；
+产物 `.scratch/phaseA-prime-native/dedup_demo.json` / `.txt`。
+
+**测试**：`.torch-cuda-env/bin/python -m pytest -q` → **246 passed, 1 skipped**
+（基线 223 passed / 1 skipped；新增 23 个用例；修复了新数据集导致的 v1 网格计数失败）。
+
+**报告**：`report/phase-a-prime-native-loader-2026-10-07.md`（含重启去重规范 §3.4、
+CLI 用法、字段/时间证据、DoD 对照与 8 条开放问题）。未改 legacy 测试/roadmap/ADR；
+未训练、未闭环、未引入 GNN/谱分支。
+
+## 2026-10-04 (Phase A′ 数据接口：export_v3 loader + 验收 CLI + 预算基础读取；223 passed)
+
+**任务**：核对新生成的逐步导出是否满足 A′ 契约，实现 `export_v3` loader 与数据验收
+CLI（含预算基础读取）。依据只有 ADR-0018/0019 + `roadmap_v2` + `data-contract-v3` /
+`data-export-spec-v3`。
+
+**关键事实**：扫描 `/mnt/d/EHL-2/*`、Windows 用户目录、仓库与 JOREK 源码树后，
+**没有任何 A′ 逐步导出 run**（无 `export_v3/manifest.json`、无 `step_*.h5`），
+JOREK 树中也没有 A′ 导出代码。因此字段审计改为对生成侧*来源文件*
+（`jorek007360`/`projections007360`/`part07360`/`macroscopic_vars.dat`/
+`abl_history.dat`/生产 namelist）逐字段清点，并交付生成侧补字段清单：
+`spi_*_arr` 16 个数组全部存在（`n_spi_tot=251`），**缺的是每步双端
+`shard_start/shard_end` 导出**与区间元数据/manifest/condition 块。
+
+**交付**：
+
+- `src/data/step_dataset.py`：A′ `StepRunDataset`
+  （`(u_k, p_{k−1}=shard_start, S_k) → u_{k+1}`）；`require_single_step`
+  （`|dt_step−dt_source|≤1e-6` JOREK 单位，manifest 可覆盖）；fail-fast
+  （严格递增、区间链接、source_end==interval_start、shard 缺失/形状、
+  未登记 boundary 码、condition 组非法）；warning+登记（缺 boundary/condition/
+  双单位秒戳）；dof0/full-dof、静态 mesh、restart/gap 登记、raw run 交叉校验；
+  复用 `output_contract` 的 `ContractError`/容差/单调性/逐步表工具。
+- `src/data/budget.py`：烧蚀（`xtime_spi_ablation[_rate]`/`abl_history.dat`）、
+  电子注入（`xtime_Ne_imp`）、电离/辐射（power+cumulative）、全局闭合
+  （`energy_conservation`/`dparticles_dt`/`particlecontent`/`bnd_particle_fluxes`）、
+  可选投影 FEM 积分；杂质预算标记 Phase B1。
+- `tools/check_export_v3.py`：合同+配对+覆盖统计+预算 summary（JSON+人类摘要）。
+- 测试：`tests/test_step_dataset.py`（28，含 real skip-if-absent）、
+  `tests/test_budget.py`（7）、`tests/test_check_export_v3.py`（3）；
+  `tests/conftest.py` 新增 A′ fixture。
+
+**真实数据预算登记（`scan_1d22_ang12_massloss_neon`，无 gate）**：烧蚀原子
+`8.9726e19`（与 `abl_history.dat` 差 0.012%）；电子注入 `2.572e25`；电离/辐射
+累计 `2.424e4`/`3.965e6`；能量闭合末行残差 `-8.988e15`（8908 行中 2 行非有限）；
+率积分 vs 累计比值 ≈20 的烧蚀率口径差异已登记待生成侧确认。`xtime*` 实测为
+**完整历史**（7350→7360 帧共享前缀逐位相等），manifest 需写 `budget_layout`。
+
+**测试**：`.torch-cuda-env/bin/python -m pytest -q` → **223 passed, 1 skipped**
+（基线 186，新增 38 用例，1 个 real-export skip；无回退）；新测试单独 37 passed。
+
+**报告**：`report/phase-a-prime-data-audit-2026-10-04.md`、
+`report/phase-a-prime-data-interface-2026-10-04.md`。`gh` 缺失，未走 issue 流程。
+未动 legacy 测试/roadmap/ADR；未训练、未闭环、未引入 GNN/谱分支。
+
+## 2026-10-04 (B2.1 交付复核：逐项权重 + direct LU 准稳态保真；186 passed)
+
+**复核**：全量 `.torch-cuda-env/bin/python -m pytest -q` → **186 passed**（B2 基线
+177，+9，无回退）。交付：`src/models/implicit_stencil.py`（`TERM_METRIC_WEIGHT`、
+17 项 α + provenance、`solver∈{direct,cg,richardson}`、relax、成本记录）、
+`src/models/jorek_boundary.py`（`SheathParameters`、corner-pair 跳过、`rhs_ij_5..9` +
+`amat_55/66/88/99` 鞘层线性化、Mach-1 主项）、`src/models/field_propagator.py`
+（solver/namelist/grid_to_wall 透传）、测试与
+`report/phase-b2.1-quasi-steady-2026-10-04.md`。
+
+**关键结果**：
+
+- 逐项权重后精确谱升为径向 6.097275e6 / 平行 4.561210e6（+21%）；稳定界表更新
+  （η 2.273e3 稳定；D_perp 6.56e-2 临界；visco/D_par/ZK∥ 不稳定）。
+- **准稳态保真解决**：direct LU（SuperLU，IFT 反传）一步 T_i 修正 1.42e-1，
+  richardson 仅 9.69e-7（差 1.5e5 倍）；backward error rho 1.1e-16 / T_i 3.7e-14 /
+  T_e 1.1e-12；合成细网格模态衰减与稠密隐式解一致（rtol 1e-10）；刚性极限为
+  近零空间投影而非冻结。
+- 边界：corner-pair 按 `construct_matrix_mod.f90:124-130` 跳过（v400 帧 198 边中 2 条；
+  合成全角点 16/16）；Mach-1 主项（1° 通量、reflection、gamma_sheath、R²u0_s n3、
+  vpar_smoothing、visco_par_heating、1/Btot+极向流限幅）复刻；`neutral_source`
+  在 JOREK 中未被使用，登记 no-op。
+- 成本（无 gate）：direct factorize+solve ≈61 ms、反传 ≈11 ms、nnz=608566、
+  缓存命中 ≈0.16 ms；CG 真实帧 200 迭代残差 9.3e-3（不收敛，登记备选）。
+
+**剩余开放项（详见 B2.1 报告 §7）**：真实帧 T_i/T_e 99.97% 在平行近零空间，剖面松弛
+需 A′ 细粒度 `(u_before,S_used,u_after)` 单步真值对照；ZK_par_max/T 依赖未进 α；
+GPU 无 LU 需场向预条件/多重网格；Mach-1 离对角 `amat_*` 与高斯点归一化未复刻；
+eta 1/BigR 与 eta_num 未复刻；`bc_natural_open=F` 与 `freeboundary=T` 未实现；
+鞘层 boundedness guard 接入 Phase C 时复核。
+
+**文档同步**：`docs/jorek-normalization.md` §3.2/§3.3 更新为 B2.1 权重谱与刚度比；
+roadmap §7 风险行更新；`report/README.md` 增 B2.1 行；B2 报告加 B2.1 指针。
+
+## 2026-10-04 (边界语义确认 + 刚性复核：归一化不消除显式不稳定)
+
+## 2026-10-04 — Phase B2.1：逐项度量权重 + 通道映射 + 边界复刻 + 准稳态保真
+
+**交付**：`report/phase-b2.1-quasi-steady-2026-10-04.md`（主报告）；
+代码 `src/models/{implicit_stencil,jorek_boundary,field_propagator}.py`；
+测试 `tests/test_implicit_stencil.py`（重写，18 用例）、
+`tests/test_field_propagator.py`（+5 用例）。
+
+1. **逐项度量权重**（替代全局 `metric_weight`）：平行项 `BigR/BB2`（在单位方向核上
+   ≡ `BigR`，测试用 B 量级核 + 字面 `BigR/BB2` 独立复算比对）、垂直/粘性 `BigR`、
+   `visco_num` 无权重；17 项系数表逐项登记 namelist 行号与 `mod_elt_matrix.f90` 行号。
+   真实帧 λ_max 更新：径向 5.023e6 → 6.097e6、平行 3.760e6 → 4.561e6（+21%，
+   不改变"η 稳定 / D_perp 临界 / visco·D_par·ZK∥ 刚性"结论）。
+2. **通道映射修订**：补 `ZK_perp_num→T_i/T_e`、`D_perp_num`、`visco_num`、
+   profile 垂直项（`D_perp/D_perp_imp/ZK_i_perp/ZK_e_perp`）；行号 provenance
+   在 `CHANNEL_TERM_PROVENANCE`。
+3. **边界层**：corner-pair 跳过（`construct_matrix_mod.f90:124-130` 与
+   `else` 组合白名单）；`SheathParameters` 从 namelist 读入并支持
+   `gamma_*_stangeby` 推导；`grid_to_wall` 生产为 T（v400 帧 198 边中 2 条跳过）。
+4. **Mach-1/鞘层**：复刻 `rhs_ij_5/6/8/9` 的 1° 通量、`density/imp_reflection`、
+   `gamma_sheath_i/e`（(γ−1) 权重）、`R²·u0_s·n3`、`vpar_smoothing`、
+   `visco_par_heating`、Mach-1 目标 `dir·factor·c_s/Btot + 极向流修正(限幅)`；
+   `mach_one_bnd_integral` 两分支收敛到同一关系；`neutral_source` 在 JOREK 中
+   未被使用（no-op 登记）；离对角 `amat_*` 耦合与高斯点弱形式归一化逐条登记缺口。
+5. **准稳态保真（核心）**：`solver="direct"`（逐通道稀疏 LU + 隐函数定理反传，
+   一阶可微、确定性）成为默认；`cg`（质量内积 Jacobi-PCG）与 `richardson`
+   （B2 阻尼迭代）保留。合成细网格：模态衰减 = `1/(1+dt·α·λ)`（rel 1e-8）、
+   刚性极限 = 近零空间投影（`<1e-3`）、field-line 质量平均守恒；
+   真实帧：direct backward error rho 1.1e-16 / T_i 3.7e-14 / T_e 1.1e-12，
+   一步 T_i 修正 1.42e-1（m-范数）vs richardson 9.69e-7（1.5e5 倍），
+   richardson 收缩率 1−8.5e-13。
+6. **回归**：全量 pytest **186 passed**（B2 基线 177，无回退）；FiLM 结构性/行为性、
+   BC 一致性、离散关系、确定性、参数量报告全部保持。
+
+**边界码确认**（用户提供语义 + JOREK 源码核对，详见 B0 报告 §9）：
+`1/11/5/15` = TARGET side2/3 inward/outward；`9/19` = CORNER free；
+`2/12` = TANGENT；`20` = CORNER fixed；`21` = CORNER inverted (special)。
+model502 实施（`models/model502/mod_boundary_conditions.f90:227-248`）：
+`2/3/12/20/21 → apply_dirichlet_all`；`1/3/4/5/9/11/15/19 → apply_cs`
+（Mach-1/鞘层）。默认开关 `no_mach1_bc=F`、`mach_one_bnd_integral=F`、
+`use_simple_bnd_types=F`（`models/preset_parameters.f90:91/679/741`）；
+生产 namelist `bc_natural_open=.true.`、`freeboundary=.false.`
+（`jorek_namelist_spitest:398/131`）。角点对（3/9/19/20/21 相邻）在
+`matrix/construct_matrix_mod.f90:124-130` 以 `is_corner_pair → cycle` 跳过，
+与用户记忆一致。剩余未复刻项：Mach-1 的 reflection/gamma_sheath/vpar_smoothing/
+`rhs_ij_*` 线性化与 corner-pair 跳过逻辑。
+
+**刚性复核**（回答"归一化后还会不会步进不稳定"）：正确归一化后的刚度比为
+`dt / dt_limit = α·λ_max·dt/2`，以 dt=0.05、B2 精确 λ_max 计：η 1.8e-5（稳定）、
+D_perp 0.63（稳定）、visco 3.0e2、visco_par 63、D_par 4.7e3、
+ZK∥（cap=1e4）9.4e8 ⇒ **物理 dt 下显式推进必然不稳定**；归一化不是问题，
+JOREK 用隐式矩阵正是为此。B2 的隐式格式方向正确，剩余问题是准稳态保真度。
+详见 `docs/jorek-normalization.md` §3.3。
+
+**文档同步**：`docs/jorek-normalization.md` §3.3（刚度比表）、B0 报告 §9
+（边界语义确认表）、B2 报告 §11 #1（已确认 + 复刻要求）、roadmap §7 风险行。
+
+**逐项权重/通道映射（代码核对）**：平行项 `BigR/BB2`
+（`mod_elt_matrix.f90:1546-1547,1595,1642`）、垂直/粘性项 `BigR`
+（`:1492,1565,1598,1641,1649`）、`visco_num` 无 `BigR`（`:1496,2031`）；
+通道映射：ZK_i_par→T_i、ZK_e_par→T_e、ZK_perp_num→T_i/T_e（B2 未纳入）、
+D_par*→rho/rho_imp、D_perp_num→rho、visco*→u/omega、visco_par*→v_par。
+已写入 docs/jorek-normalization.md §3.1、B2 报告 §11 #4/#5、roadmap §7；
+B2.1 需按此实现逐项权重并补 ZK_perp_num。
+
+## 2026-10-04 (B2 交付复核：隐式 stencil 稳定；准稳态保真度与系数链待收口)
+
+**复核**：全量 `.torch-cuda-env/bin/python -m pytest -q` → **177 passed**（基线 144，
++33，无回退）。交付：`src/models/implicit_stencil.py`、`src/models/field_propagator.py`、
+`tests/test_implicit_stencil.py`、`tests/test_field_propagator.py`、
+`report/phase-b2-field-propagator-2026-10-04.md`。
+
+**关键结果**：
+
+- B2 用逐项弱形式算子求精确谱：各向同性 `λ_max=5.0230e6`、平行 `λ_max=3.7604e6`
+  （B0 行和代理高估约 13%，结论不变）；逐项稳定界与 docs/jorek-normalization.md §3.2
+  一致（η 2.759e3 稳定；visco 1.659e-4、D_par 1.064e-5、ZK∥ 1e-12–1e-13 刚性）。
+- 隐式格式 `(I + dt·ΣαS)x=rhs` 用逐通道谱主元，任意 dt/α 收缩；物理 dt 下 8–40 层
+  有界、无 NaN、Dirichlet 行逐位保持、确定性、梯度有限。
+- FiLM 结构性与行为性验收通过：深层 stencil 对 condition 的 Jacobian 无边（逐位相等）；
+  分组置换后响应形状 cosine ≈1（只改增益）；参数量 795（含 6 维 condition）。
+- **B2 发现并修复 B0 缺陷**：element matmul 的 `[4,E]` 展平顺序错误（连续 4 单元
+  同一条边 vs 同一单元 4 角点），已修 + 回归测试（element 路径 vs 稀疏 `-Ax/m`）。
+
+**关键未收口项**：
+
+1. **准稳态保真度（中高）**：ZK∥ 在 dt=0.05 下收缩率≈1−1e-12，谱主元迭代近似冻结；
+   稳定性已满足，但"沿磁力线准稳态剖面"精度需要真隐式求解或学习型等效格式
+   （预条件 Krylov / 多重网格 / 场向核投影）。已写入 roadmap §7 与 ADR-0018 决定 13
+   的"稳定性≠保真度"条款，B2 验收新增准稳态剖面测试。
+2. **系数取值链（已定位）**：H5 的 `visco/visco_par/eta` 与 `jorek_namelist_spitest`
+   一致（2.4e-3/5e-4/1.443e-10）；`jorek_namelist_2d` 等为旧文件。α 表以 H5 +
+   `jorek_namelist_spitest` 为准；生成侧最终确认后关闭。
+3. 平行项 `metric_weight`（`BigR/BB2` 的 1/R 权重）与 `DEFAULT_CHANNEL_TERMS`
+   通道-项映射需与 JOREK 方程逐条核对；Mach-1/鞘层线性化项仍沿用 B0 近似；
+   未确认边界码 9/19/20/21 已 fail-fast 登记；freeboundary=T 未触发。
+
+**下一步**：B1（源模块）并行推进；A′ 细粒度数据生成；B2 下一迭代优先解决准稳态
+求解器与度量权重/通道映射；Phase C 需等 B1 + B2 收口。
+
+## 2026-10-04 (Phase B2：九场隐式推进器 + LTC + 浅层 FiLM 组件交付)
+
+**依据**：ADR-0018 决定 5/6/7/11/12/13、ADR-0019、`roadmap_v2.md` Phase B2、
+`docs/jorek-normalization.md`（逐项 `dt=2/(α·λ_max)`）、`report/data-export-spec-v3.md`
+condition 分组词表、B0 报告（stencil/BC 复用）。报告：
+`report/phase-b2-field-propagator-2026-10-04.md`。
+
+**模块**：`src/models/implicit_stencil.py`（逐项弱形式算子 + 精确 λ_max + 对称主元
+阻尼迭代的隐式层 + 仅作对照的显式 cap 层）、`src/models/field_propagator.py`
+（九场栈：浅层编码 + 浅层 FiLM/AdaLN + LTC 闭式积分 + n 层隐式 stencil + 解码 +
+逐层 BC 复位；boundary 码 fail-fast/登记；namelist 边界 flag 取值链）。
+
+**关键结果**：
+
+- 时间积分：`(I + dt·Σ_t α_t A_t/m) x = rhs`，对称主元
+  `D_c = 1 + dt·Σ_t α_tc λ_max(A_t)` 保证任意 dt/α 收缩（ω≤1）。平行算子有正非对角元，
+  对角 Jacobi 虽谱半径 < 1 但矩阵范数 > 1、会指数瞬态放大（实测 8 步 ×1600），已弃用。
+- 逐项精确 λ_max（真实帧 jorek003000，内部节点）：各向同性 5.0230e6、平行 3.7604e6
+  （B0 行和代理 5.7527e6 / 4.3363e6）。`dt=2/(αλ)`：η 2.76e3 ✅、D_perp 7.96e-2 ✅（临界）、
+  visco 1.66e-4 / visco_par 7.96e-4 / D_par 1.06e-5 / ZK_i_par 3.18e-12 /
+  ZK_e_par 1.30e-13 ❌ → 与 `docs/jorek-normalization.md` §3.2 结论一致。
+- 稳定性：物理 dt=0.05 下 8–40 层有界、无 NaN、Dirichlet 行逐位保持、边界 NaN 不向内、
+  确定性、梯度有限；显式对照：B0 的 α=1 几何 cap 带物理 α 后一步放大 7.4e5 倍，
+  含 α 的 cap 有效步长仅 1.5e-12·dt（物理时间不可表示）。
+- FiLM：恒等初始化（γ=1、β=0）；深层 stencil 对 condition 的 Jacobian 结构性为 0
+  （autograd 无边、相同探针两次前向逐位相等）；分组置换后局部响应形状不变
+  （合成 cosine 1.0 / 真实帧 1.0000000000000002，整体增益改变）。
+  excluded/未知 condition 组报错（`excluded_transport`/`excluded_numeric`）。
+- 参数量（真实帧、2 层、6 维 condition）：795（stencil 2×72、FiLM 290、编码 90、
+  解码 90、LTC 91、source 90）；无 condition 时 505。
+
+**顺带修复 B0 缺陷**：`StencilConv` element matmul 的 `[4,E]` 展平顺序错误
+（把连续 4 个单元的同一条边当成一个单元的四角）。B0 的守恒/常场测试对此不敏感，
+B2 的稠密对照暴露；已在 `stencil_conv.py` 与 `implicit_stencil.py` 统一为
+`transpose(0,1).reshape(-1)`，新增回归测试，B0 的 16 个用例仍全绿。
+
+**测试**：新增 `tests/test_implicit_stencil.py`（16）、`tests/test_field_propagator.py`（17），
+扩展 `tests/stencil_fixtures.py`；`pytest -q` → **177 passed, 85.5 s**（基线 144，无回退）。
+
+**待办/开放**：未确认边界码 9/19/20/21（已 fail-fast + ack 登记）；ZK∥ 刚性极限的
+准稳态投影精度需更强求解器；H5 与 run namelist 的系数不一致需生成侧确认；
+平行项 1/R 度量权重（`metric_weight="jorek"`）待定；通道-项映射与 Mach-1 线性化项
+待 JOREK 侧核对（详见报告 §11）。
+
+## 2026-10-04 (JOREK 归一化审计 + 独立规范文档 `docs/jorek-normalization.md`)
+
+**触发**：B0 的 `dt_eff≈1.74e-7` 与 JOREK 时间量级不一致，用户要求核查仓库是否
+有归一化文档，并按 JOREK 代码仓库逐项核实（没有则创建）。
+
+**审计发现**：
+
+- 现有材料只有 `src/physics/definitions.md` §5/§8 的零散说明，且 §5.1–5.3 的
+  通用 R0/B0/vA 归一化模板与 §5.4/§8 矛盾——**前者不适用于本仓库的 Model 502
+  EHL-2 路径**。
+- 代码核实（`/home/ac_desktop/JOREK_code/jorek`）：`R/Z` 米、`B` 特斯拉、
+  `psi` T·m²（`particles/mod_fields.f90:283` `B=[psi_Z,-psi_R,F0]/R`，B 声明为 [T]）；
+  `t_norm=sqrt(mu0*rho0)`（`models/mod_plasma_functions.f90:22-28`，
+  `models/model502/mod_elt_matrix.f90:1305`；H5 写 `sqrt_mu0_rho0`/`t_norm`，
+  `communication/mod_export_restart.f90:716-718`）；`u/v_par` 除以 `t_norm`
+  （`mod_fields.f90:279-286`）；`T_e` 的 with_TiTe 分支无因子 2（`mod_fields.f90:321-324`）。
+- 输运系数是"米² 每 JOREK 时间"的归一化扩散率：`D`/`visco`/`ZK` 直接乘
+  `xjac*tstep` 进弱形式（`models/model502/mod_elt_matrix.f90:1492,1546-1547,1595`），
+  `eta` 的 SI 换算为 `eta*sqrt(mu0/rho0)`（`mod_plasma_functions.f90:44`）。
+  因此显式稳定判据是 `dt=2/(α·λ_geom)`（JOREK 时间），**不需要额外乘 `t_norm`**；
+  `1.74e-7` 只是 α=1 的几何界。
+
+**产出**：新建 `docs/jorek-normalization.md`（混合单位制、逐项换算表、输运系数与
+显式稳定界、温度因子 2 条件、常见误区、代码行号索引、待补项）；并更新
+`src/physics/definitions.md` §5/§8（标注通用模板不适用 + 指向新文档）、
+`CONTEXT.md`、`docs/agents/domain.md`、`report/README.md`、B0 报告与 roadmap B2。
+
+**待补**：逐项弱形式算子的精确谱半径（替代 `A/m` 代理）；`ZK_par_max` 实际生效值；
+freeboundary=T 真空耦合的归一化。
+
+## 2026-10-04 (B0 dt_eff 单位修正：漏的是逐项输运系数，不是 t_norm)
+
+**用户质疑**：B0 的 `dt_eff≈1.74e-7` 与 JOREK 归一化时间步的量级不一致，怀疑漏了
+JOREK 时间归一化因子。
+
+**核实结论**：
+
+- `stencil_conv.stability_limit()` 按 `d x/dt = −A x / m`（系数 α=1）给
+  `dt ≤ 2/λ_max`，代码取 `dt_eff = 0.5·(2/λ_max) = 1/λ_max = 1.74e-7`。
+  `A/m` 的单位是 1/m²（x 为米），并不是 1/JOREK 时间。
+- 物理显式界必须逐项乘输运系数：`dt_term = 2/(α_term·λ_max)`，α 从 namelist/H5 取
+  （单位 m²/JOREK 时间）。用 λ_max=5.75e6 折算：η≈2.4e3（稳定）、D_perp≈7e-2（临界）、
+  visco≈1.4e-4、D_par≈7e-6、ZK∥≈3.5e-11…8.5e-14（刚性到必须隐式）。
+- **不需要额外乘 t_norm**：留在 JOREK/Alfvén 时间单位下直接比较即可；t_norm=4.0858e-7 s
+  只在换算到物理秒时使用。
+- 结论方向不变（B2 用隐式/半隐式处理刚性项），但 B0 报告 §2/§7、roadmap B2
+  「时间积分与刚性」与 ADR-0018 决定 13 已改为逐项表述，避免再被误读为
+  "JOREK 步长下显式 dt 只需 1.7e-7"。
+- 待与 JOREK 侧确认：其内部 Δ* 是否对坐标做归一化（如 x/R_geo）；若有，λ_max 需同步
+  缩放（R_geo≈1.11 ⇒ 因子 ~1.23 量级，不改变刚性结论）。
+
+## 2026-10-04 (B0 交付复核 + B2 时间积分决策：stencil 不能当显式传播子)
+
+**复核**：全量 `.torch-cuda-env/bin/python -m pytest -q` → **144 passed**（基线 128，
++16）。交付：`src/models/stencil_conv.py`、`src/models/jorek_boundary.py`、
+`tests/test_stencil_operator.py`、`tests/test_stencil_boundary.py`、
+`tests/stencil_fixtures.py`、`report/phase-b0-stencil-boundary-2026-10-04.md`。
+真实帧证据：几何与 `fem_weak.build_p1_laplacian` 逐元素相等（diff 0.0）；
+`Z_j≈Δ*ψ` corr 0.9921 / relL2 0.1326，`ω≈Δ+Φ` corr 0.9975 / relL2 0.0702（优于同帧
+图 LSQ 的 0.987/0.993、0.174/0.121）；198 个边界节点，Dirichlet/声速一致性 60 层
+保持，边界 NaN 不向内传播；确定性/守恒/质量漂移通过。
+
+**关键发现（刚性）**：显式 stencil 在 Gershgorin 界下 `dt_eff≈1.74e-7`（请求 0.05），
+60 层近乎恒等推进 ⇒ **不能把 stencil 当显式传播子**。已写入 roadmap B2
+「时间积分与刚性（强制）」与 ADR-0018 决定 13：B2 用隐式/半隐式局部格式
+（`(I − dt L) x_new = rhs` 的少量学习型阻尼迭代）或等效稳定格式（LTC 闭式 +
+stencil matvec），在物理 dt 上验收多层不变量；显式 cap 仅作组件安全测试。
+
+**待 JOREK 侧确认（B0 报告 §6）**：code 9/19 的 `psi/Z_j` 自由度；code 21 原作者
+注释不确定；code 20 依赖 `grid_to_wall` side；code 3/4/12 本帧未出现；
+`use_simple_bnd_types`/`no_mach1_bc` 取值链；`freeboundary=T` 真空耦合；
+Mach-1 的 reflection/gamma_sheath/vpar_smoothing/`rhs_ij_*` 线性化项与 `bn` 方向。
+
+**下一步**：B1（源模块）与 B2（推进器）可并行；B2 先做隐式/半隐式 stencil 更新组件，
+训练等 A′ 细粒度数据；`export_v3` shard loader + `require_single_step` 门禁仍待补。
+
+## 2026-10-04 (Phase B0 完成：stencil-conv 算子 + JOREK 边界条件层)
+
+**依据**：ADR-0018 决定 5/11、roadmap_v2 §4 Phase B0/B2、§5 第 4/10 条、§6 B0 行、
+§7 边界风险行；JOREK 源码 `models/model502/mod_boundary_conditions.f90`、
+`mod_boundary_matrix_open.f90`、`grids/grid_utils/update_boundary_types.f90`。
+本环境 `gh` 缺失（`which gh` → not found），B0 issue 未认领，按实测登记跳过。
+
+**改动**
+
+- `src/models/stencil_conv.py`（新增）：从 `jorek*.h5` 的
+  `size`/`vertex`/`contain_node`/`neighbours`/`x` 装配 FEM 几何（P1 三角化 +
+  共点节点合并 = JOREK 轴 dof 共享 + 退化单元丢弃），对 9 场做 4×4 局部 stencil
+  matmul + 集总质量散射；恒等初始化严格等于已验证弱形式 `-A x / m`；导出
+  `delta_star`/`delta_plus`、`StencilConv`/`StencilConvStack`、Gershgorin 显式稳定界。
+- `src/models/jorek_boundary.py`（新增）：boundary 代码→BC 映射表（1/2/3/4/5/9/11/12/15/19/20/21，
+  来源行号在表内）、逐节点 mask/normal/单侧内邻、Dirichlet hold（= JOREK `zbig·I` 行）、
+  Neumann/free 单侧、Mach-1 `v_par=sign(B·n)c_s` + 鞘层通量汇（`c_angle=1°`）、
+  `R→0` clamp、边界 NaN 预处理。
+- `tests/{test_stencil_operator,test_stencil_boundary,stencil_fixtures}.py`（新增）；
+  `tests/README.md` 分组表补 B0。
+- `report/phase-b0-stencil-boundary-2026-10-04.md`（交付报告：BC 映射表 + 不确定性登记）。
+
+**证据（真实帧 `scan_1d22_ang15_5_massloss_neon_v400/jorek003000.h5`）**
+
+- 几何：4125 节点 / 3986 单元 / 4052 cluster（68 个共点节点）；A/m/cluster 与
+  `fem_weak.build_p1_laplacian` 逐元素相等（diff 0.0）；`neighbours` vs 共享边
+  15844/15876 匹配（0.20% 失配全在 X 点单元）。
+- 离散关系（内部 n=3927，边界码节点剔除）：`Z_j≈Δ*ψ` corr **0.9921** / relL2 0.1326，
+  `ω≈Δ+Φ` corr **0.9975** / relL2 0.0702（帧 2750–4650 范围 0.9920–0.9927 /
+  0.9963–0.9979；同帧图 LSQ 为 0.987/0.993、relL2 0.174/0.121）。
+- 边界：198 个非零码节点（1/2/5/9/11/15/19/20/21）；psi/Phi/Z_j/omega 各 198 Dirichlet；
+  rho/Ti/Te/rho_imp/v_par 各 104 Dirichlet + 94 鞘层。60 层后全有限、Dirichlet 行与
+  初始逐元素相等、`dirichlet_ok/sonic_ok=True`；边界 NaN 3 层后全有限、内部 NaN 不污染
+  Dirichlet 边界。合成 mesh（含磁轴塌缩 fan）同样全绿。
+- 确定性：同输入同输出；恒等核质量漂移 ~1e-15；无随机初始化。
+- 测试：`.torch-cuda-env/bin/python -m pytest tests/test_stencil_operator.py tests/test_stencil_boundary.py -q`
+  → **16 passed**；全量 `.torch-cuda-env/bin/python -m pytest -q` → **144 passed, 2 warnings**
+  （基线 128，无回退，约 86 s）。
+
+**未解决/待确认**（详见交付报告 §6）：freeboundary=T 真空耦合未实现（本 run F）；
+`boundary=0` 的 X 点/free 节点不做 BC 复位；Mach-1 仅复刻声速约束 + 通量汇近似
+（reflection/gamma_sheath/vpar_smoothing/rhs_ij 线性化项待逐项复刻）；
+`use_simple_bnd_types`/`no_mach1_bc` 尚未从 namelist 取值链读取；
+显式 cap 使 60 层近乎恒等，B2 需隐式/半隐式局部 matmul 才能按物理 dt 推进。
+
+## 2026-10-04 (导出规范 A′：主路径不再要求每步完整 marker；marker 降为低分辨率诊断流)
+
+**用户确认**：保留**高分辨率流体场数据**（每流体步的 u 与 S）+ **每步 shard 状态** +
+**低分辨率 marker 诊断数据**即可；不需要每个流体步一个完整 `part*.h5`。
+
+**规范修订**（report/data-export-spec-v3.md）：
+
+- 必需（每流体步）：`u_before/u_after`、`S_used`、`shard_start/shard_end`（`spi_*`，
+  ≤~846 个碎片，约 0.03–0.11 MB/步）、boundary/condition/区间元数据；
+- 可选（1 个 run，低分辨率）：完整 marker 诊断流 M1（每帧）/ M2（每 5–10 步）/
+  M3（Eulerian 矩）；存活过滤 + float32 + `P_imp` uint8 量化；
+- 体量：A′ 主路径 dof-0 约 **7–9 GB/run**（全 dof 约 27 GB），替代原"每步全量 marker"
+  的几十到上百 GB；marker 回退路线（候选 c）需要时再加密导出。
+
+**同步**：data-contract-v3 §1.3/§4.1（p = shard 为主、marker 可选诊断）、
+roadmap Phase A ②/A1、覆盖报告开放问题 #1（标记为已决定）。
+
+## 2026-10-04 (Phase A 完成：数据契约 v3 + 导出规范 + ADR-0019 断言/配对加载器 + EHL-2 重建演示)
+
+**背景**：新架构（ADR-0018：自生成源 + stencil-conv 九场 + 错步闭环）的 Phase A
+——契约与细粒度数据。只以 ADR-0018/0019 + roadmap_v2 + schema §3.1a 为依据；
+不复用旧 manifest/checkpoint/评测 JSON；未做 GNN/谱分支/全集 concat。
+
+**改动**
+
+- 契约 v3（冻结）：`report/data-contract-v3.md`——S 对象 = model502 内部 `inj_source`
+  （Gauss 点沉积、进 RHS、对场显式），`projections*.h5` 只作监督/交叉校验；
+  时间语义（JOREK 单位 / 物理秒 + `t_norm`）、粒度七元组、ADR-0019 唯一配对
+  `(u_k, p_{k−1}=part{k}, S_k=projections{k}) → u_{k+1}`、restart 边界登记/剔除规则。
+- 导出规范（可交付生成方）：`report/data-export-spec-v3.md`——每流体步
+  `(interval_start, interval_end, u_before, S_used, u_after, p_start, p_end)` 的
+  最小字段集/形状/单位/命名/元数据、逐节点 `boundary`+`freeboundary`、condition 分组
+  词表（浅层 FiLM）、cadence 方案 A/B（粒子体积冲突）与验收清单。
+- 代码：`src/data/output_contract.py`（严格递增、`dt<=0`、projection/part 时间断言、
+  restart 登记剔除、`macroscopic_vars.dat` 逐步时间表）与
+  `src/data/paired_dataset.py`（ADR-0019 配对加载器、懒粒子快照、fail-fast）。
+- 测试：`tests/test_output_contract.py`、`tests/test_paired_dataset.py`（合成 fixture 必测
+  + 真实数据 skip-if-absent）；`tests/test_parser_contract.py` 删除 v1 对齐用例
+  （由新加载器测试取代）。
+- 演示工具：`tools/rebuild_ehl2_pairs_v3.py`。
+
+**证据 / 命令**
+
+- 全量核实（run `scan_1d22_ang12_massloss_neon`，620 配对帧）：
+  `part{k} = T_{k−1}` 620/620；`projections{k} = T_k` 614/620，其余 6 帧恰为登记
+  restart 边界（3550/4150/4950/5330/6600/7350），偏移恰为 `−dt_source`；
+  v400 编号 5050 抽样一致。
+- 重建演示：`.torch-cuda-env/bin/python tools/rebuild_ehl2_pairs_v3.py`
+  → `.scratch/n/pairs_v3_demo/{pairs_index.jsonl,restart_boundaries.json,coverage.json}`；
+  675 场帧 / 620 marker 帧 / 613 合法配对 / 6 个 restart 剔除 / 1 个覆盖边缘帧登记
+  （2700 只有 projections）/ 节点 4125。
+- 测试：`.torch-cuda-env/bin/python -m pytest -q` → **128 passed, 2 warnings**（基线
+  106 − 1 旧 v1 用例 + 23 新用例；约 80 s）。
+- 覆盖报告：`report/phase-a-coverage-2026-10-04.md`。
+
+**开放问题**（详见覆盖报告 §5，按风险排序）：粒子逐流体步导出体积（方案 A/B 待生成方
+确认磁盘预算）；新 restart 帧需自带 `interval_*` 元数据；旧帧级数据只能两端监督；
+ADR-0019 restart 措辞建议后续收紧（本任务未改 ADR）；budget 口径待生成侧核算脚本；
+本环境 `gh` 缺失，issue tracker 认领/关闭步骤跳过并已记录。
+
+## 2026-10-04 (Phase B 施工前 review：stencil 边界 BC + FiLM 注入深度两条硬约束)
+
+**用户提出两条 review comment，已写入 roadmap_v2 §4 Phase B2 / §5 第 10–11 条 /
+§6 B0、B2 行 / §7，以及 ADR-0018 决定第 11–12 条。**
+
+1. **Stencil 边界条件**：稀疏 matmul 必须执行 JOREK 边界口径——提取每节点
+   `boundary` 代码（实测 `scan_1d22_ang12_massloss_neon`：4125 节点中 198 个边界节点，
+   代码 1/2/5/9/11/15/19/20/21；`freeboundary=F`）+ `vertex`/`contain_node`/`neighbours`，
+   映射到 `mod_boundary_conditions.f90`（`apply_psi_BC`/`apply_current_BC`/
+   `apply_dirichlet_*`/`s|t_constant_boundary`）与 `mod_boundary_matrix_open.f90`；
+   **每层 stencil-conv 输出后复位边界节点**（Dirichlet 赋值；Neumann/开磁力线一致口径），
+   边界不参与内部写入；磁轴/度量奇异单独处理。
+   验收：多层推进后 BC 一致、无 NaN 向内传播、内部扰动不改变 Dirichlet 边界值。
+2. **FiLM/AdaLN 注入深度**：全局 condition（弹丸场景/输运参数）只允许在最浅编码层
+   （输入嵌入 + 第一层）调制；深层 stencil 保持纯局部通量交换；恒等初始化（γ=1, β=0）。
+   验收：打乱某组 condition 后局部微观响应函数**形状**不变（只允许整体耗散率/驱动强度
+   变化）；深层 stencil 对 condition 的局部 Jacobian ≈ 0。
+
+**对工作分派的影响**：B0 交付物增加 `boundary` 掩码/BC 映射表与 NaN 传播测试；
+B2 增加 condition 分组置换测试；Phase A 契约的导出 schema 需保留逐节点 `boundary`
+代码与 condition 分组标签。
+
+## 2026-10-04 (pytest 整理：v1 测试归档，套件收口为 106 passed / 0 skipped)
+
+**动作**：
+
+- 清点 89 个 `tests/` 文件：41 个 `test_*.py`（167 个收集用例）+ 48 个工具脚本。
+- 归档 20 个 v1 `test_*.py` 到 `tests/legacy/`（GNN 栈、teacher-source 配对、
+  v1 physics loss、旧 dataset/trainer、被取代的 sampler、两帧辨识）：
+  `test_checkpointing`、`test_cfc_interp`、`test_cognition_pipeline`、`test_conditioning`、
+  `test_data_visualization`、`test_dataset_loader`、`test_encoder_history`、`test_grad_ops`、
+  `test_interp_dataset`、`test_lnn_processor`、`test_model502_full_loss`、
+  `test_model502_interfaces`、`test_perception_pipeline`、`test_reconstruction_pipeline`、
+  `test_segmented_sampler`、`test_source_head`、`test_source_injection`、
+  `test_step_dynamics`、`test_training_and_vis`、`test_two_snapshot`。
+- `pytest.ini` 增 `norecursedirs` 含 `legacy`；`tests/conftest.py` 增 `collect_ignore = ["legacy"]`。
+- 新增 `tests/README.md`（目录结构/现行测试分组/运行方式）与 `tests/legacy/README.md`
+  （归档原因与规则）；工具脚本保持原位（不参与 pytest 收集）。
+- 引用同步：`config.yaml` 的 checkpoint 注释、`report/hyphy-glnn-audit-roadmap.md` 路径注记、
+  脏数据审计报告。
+
+**结果**：`.torch-cuda-env/bin/python -m pytest -q` → **106 passed / 0 skipped**
+（整理前 162 passed / 5 skipped；跳过的 5 个来自已归档文件）。
+
+**注**：历史条目中出现的 `tests/test_*.py` 路径，现位于 `tests/legacy/`。
+
+## 2026-10-04 (文档隔离与脏数据审计：新架构与 v1 ADR/代码/产物隔离)
+
+**用户要求**：新工作不要混入旧 ADR；找出下一阶段可能吃到的 v1 错误信息入口。
+
+**隔离落地**：
+
+- 新增 `docs/adr/README.md`：现行（ADR-0018/0019）vs 历史（0001–0017），
+  并把 ADR-0001–0017 全部加顶部历史 banner（引用须标"（历史）"，冲突以 0018/0019 为准）。
+- `AGENTS.md`、`docs/agents/domain.md`：规定新架构工作的阅读顺序（roadmap_v2 →
+  ADR 索引 → 0018/0019 → schema §3.1a → causality 修正版 → 审计报告）。
+- `README.md`、`CONTEXT.md`、`config.yaml`：加架构修订/退役 banner；
+  CONTEXT 的"训练语义/验证与治理"标为 v1 历史。
+- `report/README.md`：报告表加 scope（current / v1 / historical）。
+- 代码 banner（v1 LEGACY）：`tests/train_cfc_interpolation.py`（`source[:, k+1]` 泄漏）、
+  `src/data/interp_dataset.py`、`src/models/cfc_interp.py`、`src/models/source_head.py`、
+  `tests/train_source_head.py`、`src/training/trainer.py`、`src/evaluation/run_benchmark.py`；
+  `src/models/ltc_cell.py` 加"组件可复用、docstring 动机属 v1"NOTE。
+- `roadmap_v2.md` §0 增文档隔离规则；Phase A 增"不得复用旧 manifest/checkpoint/评测 JSON"。
+
+**新增审计报告**：`report/v2-doc-isolation-and-dirty-data-audit-2026-10-04.md`
+（文档/代码/产物三类脏数据入口 + 安全复用清单 + backlog）。
+
+**审计要点**：
+
+- 旧 manifest（`.scratch/n/manifest*.json`）、checkpoint（`output/cfc_interp/**`）、
+  评测 JSON/图（`.scratch/n/eval_*`）全部属 v1 teacher-source + 错误配对，**不得复用**。
+- 原始 `jorek/part/projections` 文件可按 ADR-0019 重建配对；`.scratch/n/frames` 最稳妥是重建。
+- `output/fragment_dynamics/v402_analytic` 可作为 B1 解析骨干证据。
+- backlog：给 GNN 栈（`gnn_encoder/decoder`、`dataset.py`、`lnn_processor.py`、
+  `benchmark.py`）补 banner；CONTEXT 逐条补 `[v1]`；CI 检查新文档引用旧 ADR 时需带"（历史）"。
+
+**待办（与上一条一致）**：加载器时间断言测试；按 ADR-0019 重建 EHL-2 配对；Phase A/B 代码骨架。
+
+## 2026-10-04 (架构修订 + 输出时序契约：以 JOREK 代码为基准；旧教师源管线判负)
+
+**用户决定（架构优先）**：
+
+1. v2 的实质是换架构；旧 teacher-source 插值结果（推理路径吃记录投影）不作基线。
+2. 撤销教师源单步 Gate（原 Phase 3.1b/E10）与 LTC 表达力抢救链；**不预设基线或性能 gate**，
+   先用新工作确定基线；首要保证架构的物理性。
+3. 空间耦合只做 **stencil-conv**（JOREK 四边形 FEM 邻接稀疏 matmul）；禁用 GNN、不做谱分支。
+4. condition 只走**物理场景子集 + FiLM/AdaLN**；不做全集 concat，也不设"无 condition"对照臂。
+5. 九场按 **9 个演化通道**处理（不拆 7+2）；用户将生成更细粒度的物理数据（按目标 B）。
+6. closer 只在记录帧上定义：预测的下一记录帧 vs 真实下一帧/上一真实帧；
+   不对区间内猜测帧计算 closer。
+
+**输出时序核实（JOREK 源码 + 生产日志 + 全量数据，详见 ADR-0019）**：
+
+- `jorek{n}` = `u(T_n)`；`projections{n}` = 采样窗口 `[T_{n−1}, T_n]` 的时间平均、
+  内部 `t_now=T_n`，被第 n+1 步求解消耗 ⇒ **`S_n` 驱动 `u_n → u_{n+1}`**；
+  `part{n}` = `T_{n−1}` 的粒子状态（窗口起点 `p_{n−1}`）。
+- 旧管线 `controls = source[:, k+1]` 是**一步未来的源（泄漏）** ⇒ 旧指标不可作基线/对照。
+- restart 边界（3550/4150/4950/5330/6600/7350；v400 5050）上，`projections{k}` 比同号
+  `jorek` 早一个 `dt_source`（偏移恰为 `−dt_source`）；`part{k}` 始终 = `T_k − dt_source`
+  （常规规则）。这些 projections 须剔除或按显式区间对齐。
+- 新数据必须自描述导出 `(interval_start, interval_end, u_before, S_used, u_after,
+  p_start, p_end)`。
+- 证据：620 个匹配索引统计（jorek 620/620 对齐 `macroscopic_vars`；projection 614/620；
+  part 620/620 = 同号场帧 − dt）、`logfile_spitest` 7360 段事件顺序、
+  `part07360.h5` 权重与日志窗口起点粒子权重一致。
+
+**文档/决策落地**：
+
+- 新增 ADR-0018（架构优先：自生成源 + stencil-conv + 物理结构化验收）与
+  ADR-0019（记录输出时序契约）。
+- `roadmap_v2.md` 重写执行段：Phase A（契约 + 细粒度数据）/ B（自生成源 + stencil-conv
+  九场）/ C（错步闭环）/ D（基线测定）/ E（JOREK 接口）；§5/§6/§7/§8 同步；
+  §1.2 新增 #15。
+- `CONTEXT.md` 的 target-frame 条目改写为记录输出时序契约；
+  `report/marker-projection-causality.md` 重写；
+  `report/model502-schema-and-source-protocol.md` 增 §3.1a；`report/pitfalls.md` #64。
+
+**待办（下一次）**：加载器时间断言测试（jorek 单调、projection 配对时间差 = 0、
+part = 配对场帧 − dt、restart 边界剔除）；按新契约重建 EHL-2 数据集配对；
+启动 Phase A/B 的代码骨架。
+
 ## 2026-10-03 (condition on/off A/B 收口：61 维全集是 OOD 捷径；诊断工具修复)
 
 **用户决定**：可以认为 condition 是上一轮变差的原因，但 condition 训练本身是必须的；

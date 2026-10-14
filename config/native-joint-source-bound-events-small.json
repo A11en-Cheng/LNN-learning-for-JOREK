@@ -1,0 +1,1187 @@
+{
+  "scope": "small_analytic_fixture_not_training",
+  "model": {
+    "native_field_step": "v2_rate_memory",
+    "output_semantics": {
+      "adapter": "native-rate-memory-v2",
+      "decoder": "dimensionless_rate",
+      "reference_time_ju": 2.0,
+      "field_factor": "dt_ju/reference_time_ju",
+      "memory_factor": "-expm1(-dt_ju/reference_time_ju)",
+      "scale_source": "train_unique_support_raw_history_scale",
+      "memory_layout": "node_hidden",
+      "official_cfc_unchanged": true
+    },
+    "units": {
+      "t_norm_si": 4.085775225951833e-07,
+      "n_norm_m3": 8e+19,
+      "central_mass": 1.0,
+      "gamma": 1.6666666666666667,
+      "field_convention": "model502_native",
+      "projection_convention": "jorek_marker_projection"
+    },
+    "modes": [
+      0
+    ],
+    "state_scale": [
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ]
+    ],
+    "increment_scale": [
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ],
+        [
+          [
+            1.0
+          ]
+        ]
+      ]
+    ],
+    "center": [
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ],
+      [
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ],
+        [
+          [
+            0.0
+          ]
+        ]
+      ]
+    ],
+    "geometry": "02af637f7e971b05bf036127c5c925f387cfd506e9e81406c9cd0eb1a133db26",
+    "indices": [
+      [
+        1,
+        2,
+        3,
+        4
+      ],
+      [
+        5,
+        6,
+        7,
+        8
+      ],
+      [
+        9,
+        10,
+        11,
+        12
+      ],
+      [
+        13,
+        14,
+        15,
+        16
+      ]
+    ],
+    "keep_n0_const": false,
+    "update_branch": "standard_nonJECCD",
+    "hidden": 8,
+    "n_layers": 1,
+    "layers": [
+      {
+        "solver": "richardson",
+        "n_iters": 2,
+        "preconditioner": "spectral",
+        "max_alpha_scale_delta": 0.5,
+        "max_relax": 0.5,
+        "implicit_terms": [
+          "eta"
+        ],
+        "explicit_terms": [],
+        "term_names": [
+          "eta"
+        ]
+      }
+    ],
+    "spatial_coefficients": [
+      [
+        0.01
+      ]
+    ],
+    "stencil_strength": 0.01,
+    "spatial_approximation": "node_P1_latent",
+    "boundary_policy": "learned_unverified",
+    "feedback_policy": "explicit_two_source_joint_learning",
+    "features": {
+      "version": "native-compatible-features-v1",
+      "evaluation": {
+        "basis": "jorek-cubic-native-gauss4-h1-v1",
+        "geometry_digest": "4f8e8d11c555a63eea3d5f16f1ccb48900bf622ea1631b23467a18550baad8eb",
+        "units": {
+          "t_norm_si": 4.085775225951833e-07,
+          "n_norm_m3": 8e+19,
+          "central_mass": 1.0,
+          "gamma": 1.6666666666666667,
+          "field_convention": "model502_native",
+          "projection_convention": "jorek_marker_projection"
+        },
+        "modes": [
+          0
+        ],
+        "aggregation": "positive_R_absJ_gauss_bilinear_partition_feature_pool_v1"
+      },
+      "statistics": {
+        "version": "native-gauss-train-statistics-v1",
+        "geometry": "4f8e8d11c555a63eea3d5f16f1ccb48900bf622ea1631b23467a18550baad8eb",
+        "training_support": [
+          [
+            "run",
+            0
+          ],
+          [
+            "run",
+            1
+          ],
+          [
+            "run",
+            2
+          ],
+          [
+            "run",
+            3
+          ],
+          [
+            "run",
+            4
+          ]
+        ],
+        "scenario_enabled": true,
+        "physics_enabled": true,
+        "value_center": [
+          0.3109374999999999,
+          0.5609375,
+          0.8109374999999999,
+          1.0609374999999999,
+          1.3109374999999996,
+          1.5609374999999996,
+          1.8109374999999994,
+          2.0609374999999996,
+          2.3109374999999996
+        ],
+        "value_scale": [
+          0.1812475314311134,
+          0.2099179830914469,
+          0.24677466553742303,
+          0.2886991434480714,
+          0.33378726646594986,
+          0.38091727058849584,
+          0.4294173712846094,
+          0.4788714592038201,
+          0.529012054748873
+        ],
+        "gradient_scale": [
+          [
+            0.45398537411177403,
+            0.4984195839650508
+          ],
+          [
+            0.7299422462567642,
+            0.7764746115750568
+          ],
+          [
+            1.0148394041441748,
+            1.061967011508242
+          ],
+          [
+            1.302824899941434,
+            1.3501871777695227
+          ],
+          [
+            1.5922238517185585,
+            1.639697309525475
+          ],
+          [
+            1.8823844555313154,
+            1.9299169642985432
+          ],
+          [
+            2.1730016229263938,
+            2.2205679637606
+          ],
+          [
+            2.463913804991142,
+            2.511500556369212
+          ],
+          [
+            2.7550275486792293,
+            2.8026270493906598
+          ]
+        ],
+        "scenario_scale": [
+          846.0,
+          430000000.0
+        ],
+        "magnetic_scale": [
+          6.5510089484329e-11,
+          7.192194596615684e-11
+        ]
+      },
+      "parameter_schema": [
+        [
+          "n_spi",
+          "scenario",
+          "1"
+        ],
+        [
+          "pellet_density",
+          "scenario",
+          "10^20 m^-3"
+        ],
+        [
+          "eta",
+          "physical_coefficient",
+          "m^2 / JOREK time"
+        ]
+      ],
+      "parameter_version": "native-feature-parameters-v1",
+      "disabled_groups": [],
+      "physical_feature": "eta_times_native_psi_RZ_gradient_not_FEM_flux"
+    },
+    "spatial_residual": true,
+    "temporal_core": {
+      "adapter": "native-cfc-v1",
+      "library": "ncps",
+      "library_version": "1.0.1",
+      "source_sha256": "946eded2eb6ce785512295d224eebb7b088998ff9e6051e87be89ea6621c810e",
+      "mode": "default",
+      "backbone_activation": "lecun_tanh",
+      "backbone_units": 11,
+      "backbone_layers": 1,
+      "backbone_dropout": 0.0,
+      "mixed_memory": false,
+      "hidden": 8,
+      "memory_layout": "node_hidden",
+      "time_scale_ju": 2.0
+    },
+    "coupled_version": "native-source-field-v3_bound_events",
+    "coupling_mode": "joint_learning",
+    "source_encoding": {
+      "version": "native-joint-source-encoding-v1",
+      "source_schema": [
+        "marker_c1",
+        "marker_c2",
+        "marker_c3",
+        "marker_c4",
+        "marker_c5",
+        "raw_projection_D1",
+        "raw_projection_D2",
+        "raw_projection_D3",
+        "raw_projection_D4",
+        "raw_projection_D5",
+        "shard_background_mass_rate",
+        "shard_impurity_mass_rate"
+      ],
+      "closure_schema": [
+        "mean_charge",
+        "mean_square_charge",
+        "alpha_e",
+        "electron_density",
+        "zeff",
+        "electron_pressure",
+        "electron_capacity",
+        "charge_gradient_R",
+        "charge_gradient_Z",
+        "pressure_gradient_R",
+        "pressure_gradient_Z",
+        "scaled_charge_history",
+        "interpreted_energy_rate",
+        "projection_history_pressure_increment"
+      ],
+      "units": {
+        "t_norm_si": 4.085775225951833e-07,
+        "n_norm_m3": 8e+19,
+        "central_mass": 1.0,
+        "gamma": 1.6666666666666667,
+        "field_convention": "model502_native",
+        "projection_convention": "jorek_marker_projection"
+      },
+      "consumer": {
+        "version": "native-torch-marker-loads-v1",
+        "mesh": {
+          "version": "native-small-source-mesh-v1",
+          "units": {
+            "t_norm_si": 4.085775225951833e-07,
+            "n_norm_m3": 8e+19,
+            "central_mass": 1.0,
+            "gamma": 1.6666666666666667,
+            "field_convention": "model502_native",
+            "projection_convention": "jorek_marker_projection"
+          },
+          "geometry": "039ca10c7514386b2a3ff039d00de8cbfb1636cfbe21a32717bb27c8f25afdf7",
+          "projection": "consistent_cubic_unfiltered_H1_no_extra_2pi",
+          "max_dofs": 128
+        },
+        "parameters": {
+          "central_density": 0.8,
+          "central_mass": 1.0,
+          "gamma": 1.6666666666666667,
+          "impurity": "Ne",
+          "nuclear_charge": 10,
+          "assembly_path": "element_matrix",
+          "use_marker": true,
+          "with_impurities": true,
+          "with_TiTe": true
+        },
+        "temperature_floor": 1e-08,
+        "coverage": {
+          "electron_direct": "local_load",
+          "projection_history": "local_load",
+          "electron_capacity": "formula_verified",
+          "pressure": "formula_verified",
+          "resistivity": "unimplemented",
+          "ion_electron_exchange": "unimplemented"
+        },
+        "linearization": "autograd_explicit_not_JOREK_matrix"
+      },
+      "scaling_version": "native-source-linear-scales-v1",
+      "scaling_provenance": "explicit_physical_reference_native_JU_m_v1",
+      "scales": {
+        "coefficients": [
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ]
+        ],
+        "gauss_values": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "gauss_gradients": [
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ],
+          [
+            1.0,
+            1.0
+          ]
+        ],
+        "closure": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "time_ju": [
+          1.0,
+          1.0
+        ]
+      },
+      "pool": "3a9dae06fc697c848280f0a1f8feff97240fef6a1a79bb3c179f342f641e8e94",
+      "dimensions": {
+        "native": 48,
+        "gauss_pooled": 50,
+        "clock": 3,
+        "encoded": 8
+      },
+      "response_semantics": "all_response_learned_no_physical_increment",
+      "field_teacher_policy": "external_paired_U_rawD_preserve_memory",
+      "source_teacher_policy": "external_explicit_or_self_generated",
+      "approximation": "positive_R_absJ_partition_pool_plus_full_coefficients"
+    },
+    "response": {
+      "version": "native-torch-marker-loads-v1",
+      "mesh": {
+        "version": "native-small-source-mesh-v1",
+        "units": {
+          "t_norm_si": 4.085775225951833e-07,
+          "n_norm_m3": 8e+19,
+          "central_mass": 1.0,
+          "gamma": 1.6666666666666667,
+          "field_convention": "model502_native",
+          "projection_convention": "jorek_marker_projection"
+        },
+        "geometry": "039ca10c7514386b2a3ff039d00de8cbfb1636cfbe21a32717bb27c8f25afdf7",
+        "projection": "consistent_cubic_unfiltered_H1_no_extra_2pi",
+        "max_dofs": 128
+      },
+      "parameters": {
+        "central_density": 0.8,
+        "central_mass": 1.0,
+        "gamma": 1.6666666666666667,
+        "impurity": "Ne",
+        "nuclear_charge": 10,
+        "assembly_path": "element_matrix",
+        "use_marker": true,
+        "with_impurities": true,
+        "with_TiTe": true
+      },
+      "temperature_floor": 1e-08,
+      "coverage": {
+        "electron_direct": "local_load",
+        "projection_history": "local_load",
+        "electron_capacity": "formula_verified",
+        "pressure": "formula_verified",
+        "resistivity": "unimplemented",
+        "ion_electron_exchange": "unimplemented"
+      },
+      "linearization": "autograd_explicit_not_JOREK_matrix"
+    },
+    "source": {
+      "version": "native-small-marker-source-v1",
+      "mesh": {
+        "version": "native-small-source-mesh-v1",
+        "units": {
+          "t_norm_si": 4.085775225951833e-07,
+          "n_norm_m3": 8e+19,
+          "central_mass": 1.0,
+          "gamma": 1.6666666666666667,
+          "field_convention": "model502_native",
+          "projection_convention": "jorek_marker_projection"
+        },
+        "geometry": "039ca10c7514386b2a3ff039d00de8cbfb1636cfbe21a32717bb27c8f25afdf7",
+        "projection": "consistent_cubic_unfiltered_H1_no_extra_2pi",
+        "max_dofs": 128
+      },
+      "atomic": "fixture_prescribed_SCD_m3_s",
+      "potentials_ev": [
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0,
+        20.0
+      ],
+      "F0": -1.0,
+      "diffusion_ju": 0.0,
+      "approximation": "constant_Dperp_no_diff_flux_unfiltered_nonCE_atomic_provider",
+      "differentiability": "numpy_reference"
+    },
+    "shards": {
+      "version": "small-native-Ne-shard-v1",
+      "mesh": {
+        "version": "native-small-source-mesh-v1",
+        "units": {
+          "t_norm_si": 4.085775225951833e-07,
+          "n_norm_m3": 8e+19,
+          "central_mass": 1.0,
+          "gamma": 1.6666666666666667,
+          "field_convention": "model502_native",
+          "projection_convention": "jorek_marker_projection"
+        },
+        "geometry": "039ca10c7514386b2a3ff039d00de8cbfb1636cfbe21a32717bb27c8f25afdf7",
+        "projection": "consistent_cubic_unfiltered_H1_no_extra_2pi",
+        "max_dofs": 128
+      },
+      "width_m": 0.15,
+      "material_density_m3": 4.3e+28,
+      "ablation_model": 3,
+      "approximations": [
+        "no_rocket",
+        "no_nonlocal",
+        "normalized_axisymmetric_Gaussian_density",
+        "one_center_marker_per_shard_per_window",
+        "toroidal_density_average_1_over_2pi"
+      ]
+    }
+  }
+}

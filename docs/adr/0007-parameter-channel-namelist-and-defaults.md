@@ -1,5 +1,7 @@
 # ADR-0007：零维参数通道：namelist 优先、JOREK 默认值填充、派生量同逻辑计算
 
+> **文档隔离（2026-10-04）**：v1 路线历史文件。新架构工作只以 ADR-0018/0019 + roadmap_v2 为准；引用须标注"（历史）"，冲突以 0018/0019 为准（索引见 README.md）。
+
 状态：已接受（2026-09-06）
 
 ## 背景
@@ -32,4 +34,3 @@
 - #0004（JOREK 侧 Fortran 补导出）被本通道取代而关闭：缺少的量从 namelist + 默认值获得，
   无需改 JOREK 写出代码。
 - 条件向量随 namelist 变化，checkpoint/provenance 必须记录所用 namelist 的 hash。
-

@@ -1,0 +1,630 @@
+[
+  {
+    "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+    "support": [
+      4111,
+      4112,
+      4113,
+      4114
+    ],
+    "prediction_index": 4112,
+    "scope": "field_only_cold_start_K2_no_feedback_no_optimizer",
+    "shape": [
+      9,
+      4,
+      1,
+      4125
+    ],
+    "memory_shape": [
+      4125,
+      12
+    ],
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "threads": 1,
+    "torch_version": "2.11.0+cu130",
+    "core": {
+      "adapter": "native-cfc-v1",
+      "library": "ncps",
+      "library_version": "1.0.1",
+      "source_sha256": "946eded2eb6ce785512295d224eebb7b088998ff9e6051e87be89ea6621c810e",
+      "mode": "default",
+      "backbone_activation": "lecun_tanh",
+      "backbone_units": 24,
+      "backbone_layers": 1,
+      "backbone_dropout": 0.0,
+      "mixed_memory": false,
+      "hidden": 12,
+      "memory_layout": "node_hidden",
+      "time_scale_ju": 1.0
+    },
+    "parameters": 3732,
+    "core_parameters": 1800,
+    "setup_seconds": 2.0065304106101394,
+    "repeats": 3,
+    "cost": {
+      "single": {
+        "forward_seconds": 0.04180114809423685,
+        "backward_seconds": 0.017299027182161808
+      },
+      "two_step": {
+        "forward_seconds": 0.08808635920286179,
+        "backward_seconds": 0.03303020540624857
+      }
+    },
+    "values_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "rawD_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "initial_memory_gradient_nonzero": true,
+    "parameter_gradients_finite": true,
+    "process_peak_rss_kib": 859076,
+    "caveat": "untrained structure, missing feedback history and unverified physical BC; no accuracy/stability/C0 claim"
+  },
+  {
+    "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+    "support": [
+      2704,
+      2705,
+      2706,
+      2707
+    ],
+    "prediction_index": 2705,
+    "scope": "field_only_cold_start_K2_no_feedback_no_optimizer",
+    "shape": [
+      9,
+      4,
+      1,
+      4125
+    ],
+    "memory_shape": [
+      4125,
+      12
+    ],
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "threads": 1,
+    "torch_version": "2.11.0+cu130",
+    "core": {
+      "adapter": "native-cfc-v1",
+      "library": "ncps",
+      "library_version": "1.0.1",
+      "source_sha256": "946eded2eb6ce785512295d224eebb7b088998ff9e6051e87be89ea6621c810e",
+      "mode": "default",
+      "backbone_activation": "lecun_tanh",
+      "backbone_units": 24,
+      "backbone_layers": 1,
+      "backbone_dropout": 0.0,
+      "mixed_memory": false,
+      "hidden": 12,
+      "memory_layout": "node_hidden",
+      "time_scale_ju": 1.0
+    },
+    "parameters": 3732,
+    "core_parameters": 1800,
+    "setup_seconds": 1.7924777031876147,
+    "repeats": 3,
+    "cost": {
+      "single": {
+        "forward_seconds": 0.036304146982729435,
+        "backward_seconds": 0.01658970257267356
+      },
+      "two_step": {
+        "forward_seconds": 0.08566877664998174,
+        "backward_seconds": 0.032663676887750626
+      }
+    },
+    "values_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "rawD_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "initial_memory_gradient_nonzero": true,
+    "parameter_gradients_finite": true,
+    "process_peak_rss_kib": 880856,
+    "caveat": "untrained structure, missing feedback history and unverified physical BC; no accuracy/stability/C0 claim"
+  }
+]

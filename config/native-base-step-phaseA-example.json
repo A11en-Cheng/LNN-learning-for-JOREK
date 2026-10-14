@@ -1,0 +1,34 @@
+{
+  "schema": "native-base-record-audit-v1",
+  "scope": "record_interface_only_no_runtime_or_training",
+  "gamma": 1.6666666666666667,
+  "gamma_provenance": "explicit_same_fixture_configuration_not_inferred_from_labels",
+  "segments": [
+    {
+      "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "first": 4112,
+      "last": 4115,
+      "burnin_steps": 1,
+      "supervision_indices": [4113, 4115],
+      "complete_support_first": 4109,
+      "block": {"first": 4108, "last": 4115, "split": "train"},
+      "state_evidence": {"native_field_and_rawD": "saved", "complete_causal_cache": "pending_evidence", "effective_configuration": "pending_evidence"},
+      "required_state": ["native_field_and_rawD", "complete_causal_cache", "effective_configuration"],
+      "model_binding": null,
+      "initialization_source": "output/native-closure-certification-2026-10-08/certified/anchors.json#4110"
+    },
+    {
+      "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "first": 2710,
+      "last": 2713,
+      "burnin_steps": 1,
+      "supervision_indices": [2711, 2713],
+      "complete_support_first": 2703,
+      "block": {"first": 2703, "last": 2715, "split": "validation"},
+      "state_evidence": {"native_field_and_rawD": "saved", "complete_causal_cache": "pending_evidence", "effective_configuration": "pending_evidence"},
+      "required_state": ["native_field_and_rawD", "complete_causal_cache", "effective_configuration"],
+      "model_binding": null,
+      "initialization_source": "output/native-closure-certification-2026-10-08/certified/anchors.json#2710"
+    }
+  ]
+}

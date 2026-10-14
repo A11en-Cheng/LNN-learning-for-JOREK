@@ -1,0 +1,880 @@
+{
+  "schema": "native-window-coverage-v1",
+  "spec_digest": "5369ca34d3b6e238374139a1ac031f61f93412c9524604b699152f3e619647df",
+  "scope": [
+    {
+      "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "first": 4108,
+      "last": 4120
+    },
+    {
+      "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "first": 2701,
+      "last": 2708
+    }
+  ],
+  "window_counts": {
+    "train": 2,
+    "validation": 2,
+    "test": 1
+  },
+  "field_supervised_windows": 5,
+  "coupled_rollout_windows": 0,
+  "exclusions": {
+    "restart_crossing": 6
+  },
+  "raw_records": 21,
+  "record_audit": [
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4108,
+      "internal_index": 4108,
+      "fluid_time_jorek": 8601.000000000284,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.5,
+      "fluid_interval_jorek": 0.5000000002837623,
+      "restart": false,
+      "projection_time_si": 0.0035141752718412743,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4109,
+      "internal_index": 4109,
+      "fluid_time_jorek": 8601.500000000284,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.5,
+      "fluid_interval_jorek": 0.5000000002837623,
+      "restart": false,
+      "projection_time_si": 0.003514379560602572,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4110,
+      "internal_index": 4110,
+      "fluid_time_jorek": 8602.000000000284,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.5,
+      "fluid_interval_jorek": 0.5000000002837623,
+      "restart": false,
+      "projection_time_si": 0.003514379560602572,
+      "projection_phase": "restart_zero_before_startup",
+      "marker_time_si": 0.003514379560602572,
+      "marker_present": true,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4111,
+      "internal_index": 4111,
+      "fluid_time_jorek": 8602.000000000251,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.5,
+      "fluid_interval_jorek": 2.510205376893282e-10,
+      "restart": true,
+      "projection_time_si": 0.0035145838493638695,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4112,
+      "internal_index": 4112,
+      "fluid_time_jorek": 8602.05000000025,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000025029294,
+      "restart": false,
+      "projection_time_si": 0.0035146042782399993,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4113,
+      "internal_index": 4113,
+      "fluid_time_jorek": 8602.10000000025,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000025029294,
+      "restart": false,
+      "projection_time_si": 0.003514624707116129,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4114,
+      "internal_index": 4114,
+      "fluid_time_jorek": 8602.150000000249,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000024847395,
+      "restart": false,
+      "projection_time_si": 0.003514645135992259,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4115,
+      "internal_index": 4115,
+      "fluid_time_jorek": 8602.200000000248,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000024847395,
+      "restart": false,
+      "projection_time_si": 0.0035146655648683888,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4116,
+      "internal_index": 4116,
+      "fluid_time_jorek": 8602.250000000247,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000024665496,
+      "restart": false,
+      "projection_time_si": 0.0035146859937445186,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4117,
+      "internal_index": 4117,
+      "fluid_time_jorek": 8602.300000000247,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000024665496,
+      "restart": false,
+      "projection_time_si": 0.0035147064226206484,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4118,
+      "internal_index": 4118,
+      "fluid_time_jorek": 8602.350000000246,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.05000000024665496,
+      "restart": false,
+      "projection_time_si": 0.003514726851496778,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4119,
+      "internal_index": 4119,
+      "fluid_time_jorek": 8602.400000000245,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.050000000244835974,
+      "restart": false,
+      "projection_time_si": 0.003514747280372908,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+      "index": 4120,
+      "internal_index": 4120,
+      "fluid_time_jorek": 8602.450000000244,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 0.05,
+      "fluid_interval_jorek": 0.050000000244835974,
+      "restart": false,
+      "projection_time_si": 0.0035147677092490378,
+      "projection_phase": "aligned",
+      "marker_time_si": 0.003514747280372908,
+      "marker_present": true,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2701,
+      "internal_index": 2701,
+      "fluid_time_jorek": 8372.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034206110191668747,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2702,
+      "internal_index": 2702,
+      "fluid_time_jorek": 8377.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034226539067798503,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2703,
+      "internal_index": 2703,
+      "fluid_time_jorek": 8382.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034226539067798503,
+      "projection_phase": "restart_zero_before_startup",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2704,
+      "internal_index": 2704,
+      "fluid_time_jorek": 8382.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 0.0,
+      "restart": true,
+      "projection_time_si": 0.0034246967943928263,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2705,
+      "internal_index": 2705,
+      "fluid_time_jorek": 8387.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034267396820058024,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2706,
+      "internal_index": 2706,
+      "fluid_time_jorek": 8392.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034287825696187784,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2707,
+      "internal_index": 2707,
+      "fluid_time_jorek": 8397.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034308254572317544,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    },
+    {
+      "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+      "index": 2708,
+      "internal_index": 2708,
+      "fluid_time_jorek": 8402.0,
+      "t_norm_si": 4.085775225951833e-07,
+      "fluid_tstep_jorek": 5.0,
+      "fluid_interval_jorek": 5.0,
+      "restart": false,
+      "projection_time_si": 0.0034328683448447304,
+      "projection_phase": "aligned",
+      "marker_time_si": null,
+      "marker_present": false,
+      "field_shape": [
+        9,
+        4,
+        1,
+        4125
+      ],
+      "projection_history_present": false,
+      "gamma_provenance": "explicit_component_audit_configuration_not_inferred_from_labels",
+      "parameter_status_counts": {
+        "declared": 12,
+        "unconfirmed_default": 6,
+        "unresolved_unit": 37,
+        "audit_only": 4,
+        "duplicate_legacy_entry": 2
+      }
+    }
+  ],
+  "parameter_variation": {
+    "train": {
+      "samples": 5,
+      "constant_unidentifiable": [
+        "D_par",
+        "D_par_imp",
+        "D_perp[1]",
+        "D_perp[2]",
+        "D_perp[3]",
+        "D_perp[4]",
+        "D_perp[5]",
+        "D_perp[6]",
+        "F0",
+        "R_domm",
+        "T_0",
+        "T_min",
+        "T_min_neg",
+        "Te_0",
+        "Te_min_ZKpar",
+        "Ti_0",
+        "Ti_min_ZKpar",
+        "ZK_e_par",
+        "ZK_e_par_neg",
+        "ZK_e_perp[1]",
+        "ZK_e_perp[2]",
+        "ZK_e_perp[3]",
+        "ZK_e_perp[4]",
+        "ZK_e_perp[5]",
+        "ZK_e_perp[6]",
+        "ZK_i_par",
+        "ZK_i_par_neg",
+        "ZK_i_perp[1]",
+        "ZK_i_perp[2]",
+        "ZK_i_perp[3]",
+        "ZK_i_perp[4]",
+        "ZK_i_perp[5]",
+        "ZK_i_perp[6]",
+        "ZK_par_max",
+        "ZKpar_T_dependent",
+        "central_density",
+        "central_mass",
+        "ellip",
+        "eta",
+        "freeboundary",
+        "gamma_e_stangeby",
+        "gamma_i_stangeby",
+        "n_limiter",
+        "n_open",
+        "n_spi",
+        "particlesource",
+        "pellet_density",
+        "resistive_wall",
+        "rho_min",
+        "rho_min_neg",
+        "sqrt_mu0_rho0",
+        "t_norm",
+        "time_evol_theta",
+        "time_evol_zeta",
+        "visco",
+        "visco_par",
+        "visco_par_par"
+      ],
+      "varying": {
+        "t_now": {
+          "min": 8602.000000000251,
+          "max": 8602.200000000248
+        },
+        "tstep": {
+          "min": 0.05,
+          "max": 0.5
+        }
+      },
+      "affine_collinear": [],
+      "missing_or_duplicate": [
+        "bc_natural_open"
+      ],
+      "note": "two settings or collinear variation cannot identify independent parameter effects"
+    },
+    "validation": {
+      "samples": 5,
+      "constant_unidentifiable": [
+        "D_par",
+        "D_par_imp",
+        "D_perp[1]",
+        "D_perp[2]",
+        "D_perp[3]",
+        "D_perp[4]",
+        "D_perp[5]",
+        "D_perp[6]",
+        "F0",
+        "R_domm",
+        "T_0",
+        "T_min",
+        "T_min_neg",
+        "Te_0",
+        "Te_min_ZKpar",
+        "Ti_0",
+        "Ti_min_ZKpar",
+        "ZK_e_par",
+        "ZK_e_par_neg",
+        "ZK_e_perp[1]",
+        "ZK_e_perp[2]",
+        "ZK_e_perp[3]",
+        "ZK_e_perp[4]",
+        "ZK_e_perp[5]",
+        "ZK_e_perp[6]",
+        "ZK_i_par",
+        "ZK_i_par_neg",
+        "ZK_i_perp[1]",
+        "ZK_i_perp[2]",
+        "ZK_i_perp[3]",
+        "ZK_i_perp[4]",
+        "ZK_i_perp[5]",
+        "ZK_i_perp[6]",
+        "ZK_par_max",
+        "ZKpar_T_dependent",
+        "central_density",
+        "central_mass",
+        "ellip",
+        "eta",
+        "freeboundary",
+        "gamma_e_stangeby",
+        "gamma_i_stangeby",
+        "n_limiter",
+        "n_open",
+        "n_spi",
+        "particlesource",
+        "pellet_density",
+        "resistive_wall",
+        "rho_min",
+        "rho_min_neg",
+        "sqrt_mu0_rho0",
+        "t_norm",
+        "time_evol_theta",
+        "time_evol_zeta",
+        "tstep",
+        "visco",
+        "visco_par",
+        "visco_par_par"
+      ],
+      "varying": {
+        "t_now": {
+          "min": 8382.0,
+          "max": 8402.0
+        }
+      },
+      "affine_collinear": [],
+      "missing_or_duplicate": [
+        "bc_natural_open"
+      ],
+      "note": "two settings or collinear variation cannot identify independent parameter effects"
+    },
+    "test": {
+      "samples": 4,
+      "constant_unidentifiable": [
+        "D_par",
+        "D_par_imp",
+        "D_perp[1]",
+        "D_perp[2]",
+        "D_perp[3]",
+        "D_perp[4]",
+        "D_perp[5]",
+        "D_perp[6]",
+        "F0",
+        "R_domm",
+        "T_0",
+        "T_min",
+        "T_min_neg",
+        "Te_0",
+        "Te_min_ZKpar",
+        "Ti_0",
+        "Ti_min_ZKpar",
+        "ZK_e_par",
+        "ZK_e_par_neg",
+        "ZK_e_perp[1]",
+        "ZK_e_perp[2]",
+        "ZK_e_perp[3]",
+        "ZK_e_perp[4]",
+        "ZK_e_perp[5]",
+        "ZK_e_perp[6]",
+        "ZK_i_par",
+        "ZK_i_par_neg",
+        "ZK_i_perp[1]",
+        "ZK_i_perp[2]",
+        "ZK_i_perp[3]",
+        "ZK_i_perp[4]",
+        "ZK_i_perp[5]",
+        "ZK_i_perp[6]",
+        "ZK_par_max",
+        "ZKpar_T_dependent",
+        "central_density",
+        "central_mass",
+        "ellip",
+        "eta",
+        "freeboundary",
+        "gamma_e_stangeby",
+        "gamma_i_stangeby",
+        "n_limiter",
+        "n_open",
+        "n_spi",
+        "particlesource",
+        "pellet_density",
+        "resistive_wall",
+        "rho_min",
+        "rho_min_neg",
+        "sqrt_mu0_rho0",
+        "t_norm",
+        "time_evol_theta",
+        "time_evol_zeta",
+        "tstep",
+        "visco",
+        "visco_par",
+        "visco_par_par"
+      ],
+      "varying": {
+        "t_now": {
+          "min": 8602.300000000247,
+          "max": 8602.450000000244
+        }
+      },
+      "affine_collinear": [],
+      "missing_or_duplicate": [
+        "bc_natural_open"
+      ],
+      "note": "two settings or collinear variation cannot identify independent parameter effects"
+    }
+  },
+  "parameter_status_counts": {
+    "declared": 252,
+    "unconfirmed_default": 126,
+    "unresolved_unit": 777,
+    "audit_only": 84,
+    "duplicate_legacy_entry": 42
+  },
+  "gaps": [
+    "no verified coupled initialization/replay in dataset",
+    "ordinary projection files lack raw deltas; recorded_full_history consumption refused",
+    "gather time absent; not inferred from fluid dt",
+    "unresolved units/defaults/duplicate legacy parameters excluded from current inputs",
+    "gradient evaluator, CfC, physical feedback consumers and trainer not connected"
+  ],
+  "conclusion": "\u539f\u751f\u56e0\u679c\u7a97\u53e3\u4e0e\u53c2\u6570\u8def\u7531\u53ef\u7528\uff08\u5df2\u58f0\u660e\u652f\u6301\u57df\uff09\uff1b\u4e0d\u662fC0\u95ed\u73af\u9a8c\u8bc1"
+}

@@ -2,6 +2,11 @@
 
 审计日期：2026-09-04。本文只读审计，不修改代码、配置、数据或既有实验产物。
 
+> **2026-10-04 路径注记**：本文引用的 v1 smoke test（`tests/test_dataset_loader.py`、
+> `test_perception_pipeline.py`、`test_cognition_pipeline.py`、`test_reconstruction_pipeline.py`、
+> `test_training_and_vis.py` 等）已归档到 `tests/legacy/`，不再被 pytest 收集；
+> 本文整体为历史报告，引用须标注"（历史）"。
+
 ## 1. 执行摘要
 
 - 当前处于 **9 场数据解析已开始、单体 9 场基线尚未跑通** 的迁移阶段；不是可进入 MoE 的稳定基线阶段。

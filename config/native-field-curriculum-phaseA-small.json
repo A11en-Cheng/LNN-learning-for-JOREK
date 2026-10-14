@@ -1,0 +1,181 @@
+{
+  "schema": "native-field-curriculum-experiment-v1",
+  "scope": "field_only_no_feedback_consumer",
+  "data": {
+    "schema": "native-curriculum-data-v1",
+    "warmup": 1,
+    "horizons": [
+      1,
+      2,
+      4
+    ],
+    "stride": 4,
+    "isolation": 7,
+    "gamma": 1.6666666666666667,
+    "gamma_provenance": "explicit_small_field_supervision_configuration",
+    "modes": [
+      0
+    ],
+    "scheme": "Gears",
+    "plan_provenance": "declared_segment_schedule",
+    "restart_registry": "data/restart_events.json",
+    "training_run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+    "segments": [
+      {
+        "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "first": 4111,
+        "last": 4142,
+        "configuration_provenance": "user_confirmed_fixed_configuration_except_timestep_table",
+        "plan_jorek": [
+          {
+            "first": 4111,
+            "last": 4142,
+            "dt": 0.05
+          }
+        ],
+        "schedule_provenance": "explicit_experiment_control_before_window_generation_checked_against_recorded_endpoints"
+      },
+      {
+        "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "first": 4150,
+        "last": 4161,
+        "configuration_provenance": "user_confirmed_fixed_configuration_except_timestep_table",
+        "plan_jorek": [
+          {
+            "first": 4150,
+            "last": 4161,
+            "dt": 0.05
+          }
+        ],
+        "schedule_provenance": "explicit_experiment_control_before_window_generation_checked_against_recorded_endpoints"
+      },
+      {
+        "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "first": 4169,
+        "last": 4180,
+        "configuration_provenance": "user_confirmed_fixed_configuration_except_timestep_table",
+        "plan_jorek": [
+          {
+            "first": 4169,
+            "last": 4180,
+            "dt": 0.05
+          }
+        ],
+        "schedule_provenance": "explicit_experiment_control_before_window_generation_checked_against_recorded_endpoints"
+      },
+      {
+        "run_path": "data/EHL-2/phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+        "first": 2704,
+        "last": 2713,
+        "configuration_provenance": "user_confirmed_fixed_configuration_except_timestep_table",
+        "plan_jorek": [
+          {
+            "first": 2704,
+            "last": 2713,
+            "dt": 5.0
+          }
+        ],
+        "schedule_provenance": "explicit_experiment_control_before_window_generation_checked_against_recorded_endpoints"
+      }
+    ],
+    "blocks": [
+      {
+        "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "split": "train",
+        "first": 4111,
+        "last": 4142
+      },
+      {
+        "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "split": "validation",
+        "first": 4150,
+        "last": 4161
+      },
+      {
+        "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+        "split": "test",
+        "first": 4169,
+        "last": 4180
+      },
+      {
+        "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+        "split": "validation",
+        "first": 2704,
+        "last": 2713
+      }
+    ]
+  },
+  "seeds": [
+    41,
+    73
+  ],
+  "threads": 1,
+  "model": {
+    "hidden": 12,
+    "n_layers": 1,
+    "n_iters": 2,
+    "stencil_strength": 0.01,
+    "backbone_units": 24,
+    "time_scale_ju": 1.0
+  },
+  "loss": {
+    "coefficients": 1.0,
+    "raw_history": 0.25,
+    "gauss_values": 0.25,
+    "compatible_gradients": 0.1
+  },
+  "optimizer": {
+    "learning_rate": 0.001,
+    "lr_decay": 0.995,
+    "max_grad_norm": 10.0
+  },
+  "stages": [
+    {
+      "name": "smoke",
+      "updates": 1,
+      "horizon": 1,
+      "teacher_probability": 1.0,
+      "detach_before": []
+    },
+    {
+      "name": "TF",
+      "updates": 19,
+      "horizon": 1,
+      "teacher_probability": 1.0,
+      "detach_before": []
+    },
+    {
+      "name": "mixed",
+      "updates": 20,
+      "horizon": 2,
+      "teacher_probability": 0.5,
+      "detach_before": []
+    },
+    {
+      "name": "AR",
+      "updates": 20,
+      "horizon": 4,
+      "teacher_probability": 0.0,
+      "detach_before": []
+    }
+  ],
+  "eval_updates": [
+    0,
+    1,
+    20,
+    40,
+    60
+  ],
+  "resume_at": 20,
+  "max_eval_windows": 2,
+  "dt_probe_factors": [
+    1.0,
+    0.1,
+    0.01,
+    0.001,
+    0.0001,
+    1e-05,
+    1e-06,
+    0.0
+  ]
+}

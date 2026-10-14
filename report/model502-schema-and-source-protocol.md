@@ -63,6 +63,17 @@ Protocol v2 (ADR-0005, ADR-0007) defines two separate source channels, both
 controls and never learning targets.  The network's learning targets remain
 the nine native state fields; all source data is labelled a control.
 
+> **2026-10-07 correction (ADR-0020 decision 1; ADR-0005/0007 read as （历史）)**:
+> in a marker run (`use_marker=.t.`, the production setting) the recorded five
+> projection channels **are** the actual field source for the energy / radiation /
+> charge channels (`models/model502/mod_elt_matrix.f90:989-1003,1079,1129,1728`),
+> while the analytic `total_imp_source` path only supplies the impurity density
+> source (`:1219,1542,1717`).  The new architecture (roadmap_v2 Phase B1) therefore
+> uses the marker feedback as its B1 target / shared S object; the "controls are
+> never learning targets" sentence above applies to the v1 interpolation route
+> only (history).  See `report/data-contract-v3.md` §1 and
+> `docs/adr/0020-marker-source-contract.md`.
+
 ### 3.1 Marker projections (primary channel)
 
 `marker_spi_source` (use_marker mode) writes one `projections<index>.h5` per
@@ -89,6 +100,31 @@ Source controls are linearly Z-scored with the train-split statistics
 (`source_stats` in the split manifest, computed only on training frames that
 carry a projection) before being injected through the LNN control encoder.
 Unforced frames pass `controls=None`; they are never zero-filled.
+
+### 3.1a Output timing contract (ADR-0019, verified 2026-10-04)
+
+Verified against JOREK source (`marker_spi_source.f90`,
+`mod_project_particles.f90`, `mod_jorek_timestepping.f90`, `mod_particle_io.f90`),
+the production log, and 620 matched frames per run:
+
+- `jorek{n}.h5` = state `u(T_n)`; `t_now` in JOREK units.
+- `projections{n}.h5` = time average of the source over `[T_{n−1}, T_n]`
+  (particles advanced in the interpolated field `u_{n−1} → u_n`), stored with
+  `t_now = T_n` in physical seconds; it is consumed by the solve that advances
+  `u_n → u_{n+1}`.
+- `part{n}.h5` = particle state at `T_{n−1}` (one JOREK step before the
+  same-index field frame; `/time` in seconds), i.e. the start of the source
+  sampling window.
+- Correct pairing: `(u_k, p_{k−1}=part{k}, S_k=projections{k}) → u_{k+1}`.
+- The legacy interpolation pipeline used `controls = source[:, k+1]`, i.e. a
+  one-step-ahead source; those runs are not a valid baseline (ADR-0018/0019).
+- Restart-checkpoint frames (e.g. 3550/4150/4950/5330/6600/7350, v400 5050)
+  are offset by one step; production runs are **not regenerated**, so they are
+  handled as *registered restart events*: the cross-boundary pair and the
+  lagging `projections{n-1}` are skipped, the event frame `n` stays
+  (ADR-0019 addendum / ADR-0020 decision 5; `data/restart_events.json`).
+- New exports must be self-describing: per fluid step
+  `(interval_start, interval_end, u_before, S_used, u_after, p_start, p_end)`.
 
 ### 3.2 Background sources (optional second channel)
 
@@ -117,10 +153,13 @@ For each new source-enabled sequence provide:
 3. The input namelist (`jorek_namelist_spitest` preferred), plus an explicit
    `model_id=502` provenance record.
 4. A train/validation/test split manifest at sequence level (never random frame
-   splits), data version/hash, and the source's temporal convention: source at
-   `t`, `t + dt`, or interval average.
+   splits), data version/hash, and the ADR-0019 timing contract fields per
+   export (`interval_start`, `interval_end`, `u_before`, `S_used`, `u_after`).
 5. A small three-frame fixture that can be checked into a permissible test-data
    location or generated in CI.
+6. Particle/marker snapshots with their own `time` dataset, aligned to the
+   contract above (`part{n}` = window start `T_{n−1}`); restart-boundary frames
+   flagged or excluded.
 
 ## 5. Current boundaries
 

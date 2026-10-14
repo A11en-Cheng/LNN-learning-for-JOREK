@@ -1,3 +1,7 @@
+# [v1 LEGACY — 2026-10-04] Teacher-source interpolation trainer. It feeds
+# source[:, end] for the u_k -> u_{k+1} update; ADR-0019 shows projections{n}
+# drives u_n -> u_{n+1}, so this is a one-step-future source leak. Do not use
+# for new work; rebuild the pairing per ADR-0019 (roadmap_v2 Phase A-C).
 """Phase-3 trainer: data-only CfC interpolation with random N-substep splits.
 
 Burn-in frames warm the hidden state (no loss), then every supervised interval

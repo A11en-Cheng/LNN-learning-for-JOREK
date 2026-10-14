@@ -1,3 +1,6 @@
+# [v1 LEGACY — 2026-10-04] v1 teacher-source field interpolator (recorded
+# projection controls). `advance_with_source_integral` / `predict_source`
+# follow v1 semantics; new architecture work is ADR-0018/0019 (roadmap_v2 Phase B/C).
 """Phase-3 field interpolator: CfC latent dynamics driven by recorded fields.
 
 The model is deliberately small: a per-node encoder, the CfC processor

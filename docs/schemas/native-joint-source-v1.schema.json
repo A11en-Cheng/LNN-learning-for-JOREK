@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-joint-source-v1.schema.json",
+  "title": "Native dual-source mode declaration (runtime tensors validated by Torch Interface)",
+  "type": "object",
+  "required": [
+    "scope",
+    "model"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "scope": {
+      "const": "small_analytic_fixture_not_training"
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "coupled_version",
+        "coupling_mode",
+        "source_encoding",
+        "source",
+        "shards",
+        "response",
+        "output_semantics",
+        "features"
+      ],
+      "properties": {
+        "coupled_version": {
+          "const": "native-source-field-v2"
+        },
+        "coupling_mode": {
+          "enum": [
+            "joint_learning",
+            "frozen99_reference"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "coupling_mode": {
+                "const": "joint_learning"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "source_encoding": {
+                "type": "object",
+                "required": [
+                  "version",
+                  "source_schema",
+                  "closure_schema",
+                  "scales",
+                  "scaling_version",
+                  "scaling_provenance",
+                  "units",
+                  "dimensions"
+                ],
+                "properties": {
+                  "version": {
+                    "const": "native-joint-source-encoding-v1"
+                  },
+                  "source_schema": {
+                    "const": [
+                      "marker_c1",
+                      "marker_c2",
+                      "marker_c3",
+                      "marker_c4",
+                      "marker_c5",
+                      "raw_projection_D1",
+                      "raw_projection_D2",
+                      "raw_projection_D3",
+                      "raw_projection_D4",
+                      "raw_projection_D5",
+                      "shard_background_mass_rate",
+                      "shard_impurity_mass_rate"
+                    ]
+                  },
+                  "closure_schema": {
+                    "const": [
+                      "mean_charge",
+                      "mean_square_charge",
+                      "alpha_e",
+                      "electron_density",
+                      "zeff",
+                      "electron_pressure",
+                      "electron_capacity",
+                      "charge_gradient_R",
+                      "charge_gradient_Z",
+                      "pressure_gradient_R",
+                      "pressure_gradient_Z",
+                      "scaled_charge_history",
+                      "interpreted_energy_rate",
+                      "projection_history_pressure_increment"
+                    ]
+                  },
+                  "scaling_version": {
+                    "const": "native-source-linear-scales-v1"
+                  },
+                  "dimensions": {
+                    "properties": {
+                      "native": {
+                        "const": 48
+                      },
+                      "gauss_pooled": {
+                        "const": 50
+                      },
+                      "clock": {
+                        "const": 3
+                      }
+                    }
+                  }
+                }
+              },
+              "response": {
+                "not": {
+                  "required": [
+                    "response"
+                  ]
+                }
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "source_encoding": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

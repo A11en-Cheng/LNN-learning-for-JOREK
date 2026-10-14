@@ -1,3 +1,5 @@
+# [v1 LEGACY — 2026-10-04] v1 GNN trainer (JorekSequenceDataset path). Not used
+# by roadmap_v2 Phase A-E; keep only as reference.
 import torch
 import torch.nn as nn
 from torch.optim import AdamW

@@ -1,0 +1,296 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "native-causal-window-v2.schema.json",
+  "title": "Native causal window collection; labels are dataset-owned",
+  "type": "object",
+  "required": [
+    "schema",
+    "windows",
+    "exclusions",
+    "rejections"
+  ],
+  "properties": {
+    "schema": {
+      "const": "native-causal-window-v2"
+    },
+    "spec_digest": {
+      "type": "string"
+    },
+    "spec": {
+      "type": "object"
+    },
+    "exclusions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "windows": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/window"
+      }
+    },
+    "rejections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "run",
+          "split",
+          "prediction_index",
+          "support_indices",
+          "reason"
+        ]
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "parameter": {
+      "type": "object",
+      "required": [
+        "name",
+        "group",
+        "unit",
+        "provenance",
+        "available_at",
+        "normalizer",
+        "consumer",
+        "supported_range",
+        "value",
+        "status"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "group": {
+          "enum": [
+            "scenario",
+            "physical_coefficient",
+            "numeric_time"
+          ]
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provenance": {
+          "type": "object",
+          "required": [
+            "kind",
+            "source"
+          ]
+        },
+        "available_at": {
+          "enum": [
+            "initialization",
+            "unavailable_until_confirmed"
+          ]
+        },
+        "normalizer": {
+          "type": "string"
+        },
+        "consumer": {
+          "type": "string"
+        },
+        "supported_range": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "schema",
+        "run",
+        "split",
+        "prediction_index",
+        "support_indices",
+        "config",
+        "qualification",
+        "initialization",
+        "support",
+        "support_time_plan_si",
+        "time_plan_si",
+        "plan_provenance",
+        "scheme",
+        "loss_mask",
+        "warmup_mask",
+        "valid_target_mask",
+        "field_teacher_mask",
+        "source_teacher_mask",
+        "future_labels_only",
+        "gradient_contract",
+        "teacher_replacement",
+        "current_provenance",
+        "eligibility"
+      ],
+      "properties": {
+        "schema": {
+          "const": "native-causal-window-v2"
+        },
+        "run": {
+          "type": "string",
+          "description": "audit identity only; never a model feature"
+        },
+        "split": {
+          "enum": [
+            "train",
+            "validation",
+            "test"
+          ]
+        },
+        "prediction_index": {
+          "type": "integer"
+        },
+        "support_indices": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "config": {
+          "type": "object",
+          "required": [
+            "warmup",
+            "horizon",
+            "stride",
+            "isolation",
+            "field_teacher_policy",
+            "source_teacher_policy",
+            "truncation_steps"
+          ]
+        },
+        "qualification": {
+          "enum": [
+            "field_supervised",
+            "conditional_source",
+            "self_generated_source"
+          ]
+        },
+        "initialization": {
+          "type": "object",
+          "required": [
+            "field_anchor",
+            "anchor_index",
+            "replay_steps",
+            "ordinary_window_restart"
+          ]
+        },
+        "support": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "index",
+              "time_si",
+              "previous_dt_si",
+              "provenance",
+              "restart",
+              "compatibility",
+              "source_interval_si",
+              "feedback_history_provenance",
+              "gather_time_si",
+              "parameters"
+            ],
+            "properties": {
+              "parameters": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/parameter"
+                }
+              }
+            }
+          }
+        },
+        "support_time_plan_si": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "time_plan_si": {
+          "type": "array",
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "plan_provenance": {
+          "enum": [
+            "declared_run_control",
+            "declared_segment_schedule",
+            "recorded_schedule_replay"
+          ]
+        },
+        "scheme": {
+          "type": "string"
+        },
+        "current_provenance": {
+          "type": "string"
+        },
+        "loss_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "warmup_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "valid_target_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "field_teacher_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "source_teacher_mask": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        },
+        "future_labels_only": {
+          "const": true
+        },
+        "gradient_contract": {
+          "type": "string"
+        },
+        "teacher_replacement": {
+          "type": "string"
+        },
+        "eligibility": {
+          "type": "object",
+          "required": [
+            "field_supervised",
+            "conditional_source",
+            "self_generated_source"
+          ]
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

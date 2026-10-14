@@ -1,3 +1,6 @@
+# [v1 LEGACY — 2026-10-04] Dataset for the v1 interpolation route. Sources are
+# loaded per frame with the same index as the state; new architecture work must
+# apply the ADR-0019 pairing ((u_k, p_{k-1}=part{k}, S_k) -> u_{k+1}) before reuse.
 """Torch dataset, frame store and collate for the Phase-1 window corpus.
 
 The dataset consumes the manifest produced by :mod:`src.data.window_manifest`

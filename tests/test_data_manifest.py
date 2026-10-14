@@ -238,5 +238,9 @@ def test_real_data_eligible_runs_share_one_grid():
     assert summary["n_grids"] == 1
     # The corpus dropped to eight runs on 2026-09-29: the two ``*_v200``
     # directories were mislabelled duplicates of ``*_v300`` and were removed.
-    assert len(summary["runs"]) == 8
-    assert all("ntor11" not in run["name"] for run in summary["runs"])
+    # The A' native stepwise run (``phaseA_dataset_*``, 2026-10-07) also lives
+    # under data/EHL-2 and is 2D with aligned frames, but it is not part of the
+    # v1 eight-run corpus; its contract is checked by the Phase A' tests.
+    runs = [run for run in summary["runs"] if not run["name"].startswith("phaseA_dataset_")]
+    assert len(runs) == 8
+    assert all("ntor11" not in run["name"] for run in runs)

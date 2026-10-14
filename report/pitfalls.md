@@ -1322,3 +1322,32 @@
       混在一起，OOD 场景下后者是不可迁移的捷径。** 要 condition 就必须做通道分组
       消融（先只保留物理场景子集）；61 维全集不得再作为默认基线。
     - 细节与图：`report/ab-condition-2026-10-03.md`、`.scratch/n/fig/allwin_condition_ab*.{png,md}`。
+
+64. **输出时序核实：`projections{n}` 驱动 `u_n→u_{n+1}`；`part{n}` 在 `T_{n−1}`；
+    旧管线的"目标帧配对"是一步未来泄漏（2026-10-04）**
+    - 触发：用户要求以 JOREK 代码为基准，确定 part/projection 输出的"当前步/下一步"语义
+      （直接决定数据集配对与新架构的推理顺序）。
+    - 证据链（三层）：
+      ① 源码：粒子在 `u_{n−1}→u_n` 的插值场中走完窗口并做时间平均
+      （`jorek_feedback%rhs = feedback_rhs/(n_steps·timesteps)`），
+      `do_jorek_timestep` 递增 `index_now`、用当前 feedback 组装矩阵求解、`t_now += dt_jorek`
+      后写 `jorek{index_now}`；
+      ② 生产日志（`scan_1d22_ang12_massloss_neon/logfile_spitest`，非 restart 段 7360）：
+      `After step 007360` → 粒子窗口（`sim%time=T_7359`，`target_time=T_7360`）→
+      `Written projection to projections007360.h5` → `After step 007361`；
+      ③ 全量统计（620 个匹配索引）：`jorek` 的 `t_now`=宏观第 n 步时间（620/620）；
+      `projections` 的 `t_now`=同号场帧时间（614/620；6 个例外全是 restart 检查点）；
+      `part` 的 `time`=同号场帧时间 − `dt_n`（620/620，内容与日志窗口起点粒子权重一致）。
+    - 结论：`projections{n}` 是采样窗口 `[T_{n−1},T_n]` 的时间平均（内部时间 `T_n`），
+      被第 n+1 步求解消耗 ⇒ **`S_n` 驱动 `u_n→u_{n+1}`**；`part{n}` 是 `T_{n−1}` 的
+      粒子状态（窗口起点 `p_{n−1}`）。正确配对：`(u_k, p_{k−1}=part{k}, S_k) → u_{k+1}`。
+    - 旧管线判负：`controls = source[:, k+1]`（目标帧索引）相当于喂入 `S_{k+1}`
+      （由 `u_{k+1}` 参与、驱动 `u_{k+1}→u_{k+2}`），是一步未来的源泄漏；叠加 ADR-0018
+      的架构撤销，旧 teacher-source 指标不得作基线/对照。
+    - restart 边界：3550/4150/4950/5330/6600/7350（run 1）与 5050（v400）上，
+      `projections{k}` 相对同号 `jorek` 早一个 `dt_source`（偏移恰为 `−dt_source`）；
+      `part{k}` 始终 = `T_k − dt_source`（常规规则）。这些 projections 须剔除或按
+      显式区间对齐。
+    - 细节与决策：`report/marker-projection-causality.md`、ADR-0019；
+      同步文档：`CONTEXT.md`、`report/model502-schema-and-source-protocol.md` §3.1a、
+      `roadmap_v2.md` §1.2 #15 / §3 / §5。

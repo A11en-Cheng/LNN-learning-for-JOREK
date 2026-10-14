@@ -1,5 +1,7 @@
 # ADR-0003：运行环境为 `.torch-cuda-env`（CUDA 13 / torch cu130）
 
+> **文档隔离（2026-10-04）**：v1 路线历史文件。新架构工作只以 ADR-0018/0019 + roadmap_v2 为准；引用须标注"（历史）"，冲突以 0018/0019 为准（索引见 README.md）。
+
 状态：已接受（2026-09-06）
 
 ## 背景
@@ -20,4 +22,3 @@
 
 - 所有测试、训练、benchmark 一律用 `.torch-cuda-env/bin/python` 运行。
 - 显存预算不能按 16GB 满额假设；每次 benchmark 都要记录 `nvidia-smi` 的并发状态。
-

@@ -1,3 +1,6 @@
+# NOTE (2026-10-04): reusable component in the new architecture (ADR-0018).
+# The docstring's "physics residual at an interpolated time" rationale belongs
+# to the v1 route; current semantics are in ADR-0018/0019 + roadmap_v2 Phase B/C.
 """Liquid time-constant (LTC) cell with the exact closed-form step.
 
 The cell no longer predicts the next hidden state.  It predicts the two

@@ -1,3 +1,6 @@
+# [v1 LEGACY — 2026-10-04] v1 source head trained with same-index
+# (u_n, shard_n) -> S_n pairs; ADR-0019 requires the window-start particle state
+# p_{n-1}=part{n} plus the field path (u_{n-1}, u_n). Fix the pairing before reuse.
 """Fragment-to-projection source head: analytic baseline + learned correction.
 
 The head consumes one frame worth of node state ``u_raw`` (physical JOREK

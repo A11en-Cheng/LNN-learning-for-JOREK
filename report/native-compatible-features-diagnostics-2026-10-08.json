@@ -1,0 +1,616 @@
+[
+  {
+    "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400",
+    "scope": [
+      4111,
+      4114
+    ],
+    "prediction_index": 4112,
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "torch_version": "2.11.0+cu130",
+    "threads": 1,
+    "coefficient_shape": [
+      9,
+      4,
+      1,
+      4125
+    ],
+    "gauss_shape": [
+      3986,
+      16,
+      9
+    ],
+    "gradient_shape": [
+      3986,
+      16,
+      9,
+      2
+    ],
+    "node_feature_shape": [
+      4125,
+      27
+    ],
+    "parameter_count": 1932,
+    "parameter_groups": {
+      "encoder": 936,
+      "decoder": 468,
+      "feature_path": 12,
+      "feature_encoder": 336,
+      "scenario_film": 120,
+      "magnetic_encoder": 24,
+      "stencil_layers": 36
+    },
+    "parameter_gradient_finite": true,
+    "nonzero_parameter_gradient_count": 1932,
+    "values_degree_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "history_degree_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "setup_io_geometry_statistics_model_seconds": 2.1467431490309536,
+    "repeats": 3,
+    "forward_median_seconds": 0.03608037764206529,
+    "backward_median_seconds": 0.016174850054085255,
+    "process_peak_rss_kib": 777156,
+    "caveat": "prescribed existing fields, component gradients only; no self-generated feedback or prediction claim"
+  },
+  {
+    "run": "phaseA_dataset_1d22_ang15_massloss_neon_v400_injInner",
+    "scope": [
+      2704,
+      2707
+    ],
+    "prediction_index": 2705,
+    "dtype": "torch.float64",
+    "device": "cpu",
+    "torch_version": "2.11.0+cu130",
+    "threads": 1,
+    "coefficient_shape": [
+      9,
+      4,
+      1,
+      4125
+    ],
+    "gauss_shape": [
+      3986,
+      16,
+      9
+    ],
+    "gradient_shape": [
+      3986,
+      16,
+      9,
+      2
+    ],
+    "node_feature_shape": [
+      4125,
+      27
+    ],
+    "parameter_count": 1932,
+    "parameter_groups": {
+      "encoder": 936,
+      "decoder": 468,
+      "feature_path": 12,
+      "feature_encoder": 336,
+      "scenario_film": 120,
+      "magnetic_encoder": 24,
+      "stencil_layers": 36
+    },
+    "parameter_gradient_finite": true,
+    "nonzero_parameter_gradient_count": 1932,
+    "values_degree_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "history_degree_gradient_coverage": [
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ],
+      [
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ],
+        [
+          true
+        ]
+      ]
+    ],
+    "setup_io_geometry_statistics_model_seconds": 1.9518339312635362,
+    "repeats": 3,
+    "forward_median_seconds": 0.03382101422175765,
+    "backward_median_seconds": 0.015006452333182096,
+    "process_peak_rss_kib": 785756,
+    "caveat": "prescribed existing fields, component gradients only; no self-generated feedback or prediction claim"
+  }
+]

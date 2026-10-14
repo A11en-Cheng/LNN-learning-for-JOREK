@@ -1,3 +1,6 @@
+# [v1 LEGACY — 2026-10-04] v1 GNN benchmark entry point; superseded by the new
+# architecture's evaluation plan (roadmap_v2 Phase D/E). Its metrics are not
+# baselines (ADR-0018).
 import os
 import sys
 import yaml

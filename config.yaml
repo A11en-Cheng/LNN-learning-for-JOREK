@@ -1,4 +1,8 @@
 # HyPhy-GLNN Configuration File
+#
+# RETIRED (v1 route, 2026-10-04): this file describes the retired nine-field /
+# teacher-source pipeline. New architecture work follows roadmap_v2.md and
+# docs/adr/0018 / 0019; do not reuse these values as defaults for new experiments.
 
 data:
   # Model 502 only. BEST is Model 600/8-field data and is intentionally excluded.
@@ -32,7 +36,7 @@ model:
   processor_layers: 2
   decoder_layers: 4
   source_dim: 3
-  checkpoint: true  # gradient-equivalent activation savings; see tests/test_checkpointing.py
+  checkpoint: true  # gradient-equivalent activation savings; see tests/legacy/test_checkpointing.py (v1)
 
 schema:
   version: "model502-state-v1"
